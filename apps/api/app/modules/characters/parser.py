@@ -144,7 +144,7 @@ def _parse_weapons(cells: dict[str, str]) -> list[dict]:
     weapons: list[dict] = []
 
     for row in range(53, 59):
-        name = _clean(cells.get(f"B{row}")) or _clean(cells.get(f"G{row}"))
+        name = _clean(cells.get(f"B{row}"))
 
         if not name or name == "无":
             continue
@@ -206,12 +206,19 @@ def _parse_spells(cells: dict[str, str]) -> list[dict]:
 
 def _parse_warnings(cells: dict[str, str]) -> list[str]:
     warnings: list[str] = []
+    missing_attributes = [
+        "LUCK" if key == "Luck" else key
+        for key, ref in ATTRIBUTE_FALLBACK_REFS.items()
+        if _number(cells.get(ref)) is None
+    ]
 
     if not _clean(cells.get("E3")):
         warnings.append("未读取到调查员姓名，可能是空白模板或非当前模板。")
 
-    if not any(_number(cells.get(ref)) for ref in ATTRIBUTE_FALLBACK_REFS.values()):
+    if len(missing_attributes) == len(ATTRIBUTE_FALLBACK_REFS):
         warnings.append("未读取到主要属性数值，上传文件可能仍为空白卡。")
+    elif missing_attributes:
+        warnings.append(f"缺少属性数值：{', '.join(missing_attributes)}。")
 
     return warnings
 
