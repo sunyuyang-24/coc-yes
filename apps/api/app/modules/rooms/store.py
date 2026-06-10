@@ -37,6 +37,7 @@ class RoomStore:
                 ],
                 "messages": [],
                 "rolls": [],
+                "characters": [],
             }
 
             self._state["rooms"][room_id] = room
@@ -113,6 +114,38 @@ class RoomStore:
             self._save()
 
             return deepcopy(roll_record)
+
+    def add_character(self, room_id: str, owner_id: str, character: dict) -> dict:
+        with self._lock:
+            room = self._require_room(room_id)
+            owner = self._find_member(room, owner_id)
+            characters = room.setdefault("characters", [])
+            record = {
+                **character,
+                "id": uuid4().hex,
+                "roomId": room_id,
+                "ownerId": owner_id,
+                "ownerName": owner["displayName"],
+                "createdAt": self._now(),
+                "updatedAt": self._now(),
+            }
+
+            existing_index = next(
+                (index for index, item in enumerate(characters) if item.get("ownerId") == owner_id),
+                None,
+            )
+
+            if existing_index is None:
+                characters.append(record)
+            else:
+                record["createdAt"] = characters[existing_index].get("createdAt", record["createdAt"])
+                characters[existing_index] = record
+
+            display_name = record.get("basic", {}).get("name") or record["sourceFileName"]
+            self._add_system_message(room, f"{owner['displayName']} 上传了角色卡「{display_name}」。")
+            self._save()
+
+            return deepcopy(record)
 
     def set_member_online(self, room_id: str, member_id: str, online: bool) -> dict:
         with self._lock:

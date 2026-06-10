@@ -2,8 +2,8 @@
 
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DiceRollResult, RoomDetail } from "@coc-yes/shared";
-import { apiRequest, wsUrl } from "@/lib/api";
+import type { CharacterCard, DiceRollResult, RoomDetail } from "@coc-yes/shared";
+import { apiRequest, apiUrl, wsUrl } from "@/lib/api";
 
 type RoomResponse = {
   room: RoomDetail;
@@ -33,6 +33,7 @@ export function RoomConsole() {
   const [expression, setExpression] = useState("1d100");
   const [targetValue, setTargetValue] = useState("60");
   const [bonusPenalty, setBonusPenalty] = useState("0");
+  const [characterFile, setCharacterFile] = useState<File | null>(null);
   const [notice, setNotice] = useState("创建或加入房间后，聊天会实时同步。");
   const messageEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -168,6 +169,34 @@ export function RoomConsole() {
     setNotice("投掷完成，结果已写入房间日志。");
   }
 
+  async function uploadCharacter(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!room || !memberId || !characterFile) {
+      setNotice("请先选择一个 Excel 角色卡文件。");
+      return;
+    }
+
+    const body = new FormData();
+    body.append("ownerId", memberId);
+    body.append("file", characterFile);
+    setNotice("正在上传并解析角色卡...");
+
+    const response = await fetch(apiUrl(`/api/rooms/${room.id}/characters/upload`), {
+      method: "POST",
+      body
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `HTTP ${response.status}`);
+    }
+
+    const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`);
+    setRoom(detail.room);
+    setNotice("角色卡已解析并绑定到房间。");
+  }
+
   function leaveLocalRoom() {
     setRoom(null);
     setMemberId(null);
@@ -301,6 +330,22 @@ export function RoomConsole() {
               </button>
             </form>
 
+            <form className="upload-panel" onSubmit={uploadCharacter}>
+              <p className="panel__kicker">Character</p>
+              <h3>上传角色卡</h3>
+              <label>
+                Excel 文件
+                <input
+                  accept=".xlsx,.xlsm"
+                  onChange={(event) => setCharacterFile(event.target.files?.[0] ?? null)}
+                  type="file"
+                />
+              </label>
+              <button className="button button--ghost" type="submit">
+                解析并绑定
+              </button>
+            </form>
+
             <button className="text-button" type="button" onClick={leaveLocalRoom}>
               仅退出本地视图
             </button>
@@ -337,6 +382,14 @@ export function RoomConsole() {
           </section>
         </div>
       ) : null}
+
+      {room?.characters?.length ? (
+        <section className="character-shelf">
+          {room.characters.map((character) => (
+            <CharacterCardView character={character} key={character.id} />
+          ))}
+        </section>
+      ) : null}
     </section>
   );
 }
@@ -368,6 +421,67 @@ function DiceRollView({ roll }: { roll: DiceRollResult }) {
       </small>
     </div>
   );
+}
+
+function CharacterCardView({ character }: { character: CharacterCard }) {
+  const visibleSkills = character.skills.slice(0, 12);
+  const name = character.basic.name || character.sourceFileName;
+
+  return (
+    <article className="character-card">
+      <div className="character-card__header">
+        <div>
+          <p className="panel__kicker">{character.ownerName}</p>
+          <h2>{name}</h2>
+          <p>
+            {character.basic.occupation || "未读取职业"} · {character.basic.age || "年龄未知"}
+          </p>
+        </div>
+        <span>{character.sourceFileName}</span>
+      </div>
+
+      {character.warnings.length ? (
+        <div className="character-warnings">
+          {character.warnings.map((warning) => (
+            <p key={warning}>{warning}</p>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="attribute-grid">
+        {character.attributes.map((attribute) => (
+          <div key={attribute.key}>
+            <span>{attribute.key}</span>
+            <strong>{attribute.value ?? "?"}</strong>
+            <small>
+              困难 {attribute.half ?? "?"} · 极难 {attribute.fifth ?? "?"}
+            </small>
+          </div>
+        ))}
+      </div>
+
+      <div className="character-card__split">
+        <div>
+          <h3>技能预览</h3>
+          <div className="skill-list">
+            {visibleSkills.map((skill) => (
+              <span key={`${skill.name}-${skill.value}`}>
+                {skill.name} {skill.value ?? "?"}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div>
+          <h3>背景摘要</h3>
+          <p>{firstFilled(character.background) || "暂未读取到背景文本。"}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function firstFilled(values: Record<string, string>) {
+  return Object.values(values).find(Boolean) ?? "";
 }
 
 function formatTime(value: string) {
