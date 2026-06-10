@@ -1,6 +1,7 @@
 :root {
-  --bg: #101511;
-  --bg-soft: #182119;
+  --page-bg: #000000;
+  --bg: #000000;
+  --bg-soft: #0d0d0d;
   --panel: rgba(236, 229, 211, 0.08);
   --panel-strong: rgba(236, 229, 211, 0.13);
   --line: rgba(236, 229, 211, 0.18);
@@ -10,6 +11,30 @@
   --accent-ink: #1a240d;
   --danger: #ff8a6b;
   --shadow: 0 30px 90px rgba(0, 0, 0, 0.35);
+}
+
+html[data-background="graphite"] {
+  --page-bg: #141414;
+  --bg: #141414;
+  --bg-soft: #1d1d1d;
+}
+
+html[data-background="green"] {
+  --page-bg: #07130d;
+  --bg: #07130d;
+  --bg-soft: #0f1f15;
+}
+
+html[data-background="blue"] {
+  --page-bg: #07111f;
+  --bg: #07111f;
+  --bg-soft: #101c30;
+}
+
+html[data-background="red"] {
+  --page-bg: #1a0708;
+  --bg: #1a0708;
+  --bg-soft: #2a1011;
 }
 
 * {
@@ -24,10 +49,7 @@ body {
   margin: 0;
   min-height: 100dvh;
   color: var(--text);
-  background:
-    radial-gradient(circle at 12% 12%, rgba(213, 255, 119, 0.16), transparent 28rem),
-    radial-gradient(circle at 90% 20%, rgba(133, 168, 120, 0.18), transparent 24rem),
-    linear-gradient(135deg, #0e120f 0%, #121b14 48%, #090d0b 100%);
+  background: var(--page-bg);
   font-family: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
 }
 
@@ -180,7 +202,7 @@ h2 {
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px;
   margin: 42px 0;
 }
@@ -200,6 +222,40 @@ h2 {
 .panel p {
   color: var(--muted);
   line-height: 1.75;
+}
+
+.background-picker__grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.swatch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 12px;
+  color: var(--text);
+  background: rgba(244, 234, 216, 0.07);
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.swatch span {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(244, 234, 216, 0.5);
+  border-radius: 50%;
+  background: var(--swatch);
+}
+
+.swatch--active {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .status {
