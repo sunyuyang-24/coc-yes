@@ -43,6 +43,40 @@ export type DiceRollResult = {
   createdAt: string;
 };
 
+export type CharacterAttribute = {
+  key: string;
+  label: string;
+  value: number | null;
+  half: number | null;
+  fifth: number | null;
+};
+
+export type CharacterSkill = {
+  name: string;
+  value: number | null;
+  half: number | null;
+  fifth: number | null;
+};
+
+export type CharacterCard = {
+  id: string;
+  roomId: string;
+  ownerId: string;
+  ownerName: string;
+  sourceFileName: string;
+  basic: Record<string, string>;
+  attributes: CharacterAttribute[];
+  status: Record<string, number | null>;
+  skills: CharacterSkill[];
+  weapons: Array<Record<string, string | number | null>>;
+  background: Record<string, string>;
+  experiences: Array<Record<string, string>>;
+  spells: Array<Record<string, string>>;
+  warnings: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ChatMessage = {
   id: string;
   type: "text" | "system" | "dice_roll";
@@ -64,6 +98,7 @@ export type RoomDetail = {
   members: RoomMember[];
   messages: ChatMessage[];
   rolls?: DiceRollResult[];
+  characters?: CharacterCard[];
 };
 
 export type BuildPhase = {
@@ -92,7 +127,7 @@ export const CORE_MODULES: CoreModule[] = [
   {
     key: "characters",
     label: "角色卡",
-    stage: "planned"
+    stage: "active"
   },
   {
     key: "rules",
@@ -124,7 +159,7 @@ export const BUILD_PHASES: BuildPhase[] = [
     key: "character-card",
     order: 3,
     label: "角色卡解析",
-    goal: "上传 Excel 后生成可查看、可投掷的结构化角色卡。"
+    goal: "上传 Excel 后生成可查看、可投掷的结构化角色卡。当前正在落地。"
   },
   {
     key: "rules-search",

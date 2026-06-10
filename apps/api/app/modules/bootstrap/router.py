@@ -27,7 +27,7 @@ async def bootstrap() -> dict[str, object]:
             {
                 "key": "characters",
                 "label": "角色卡解析",
-                "status": "planned",
+                "status": "active",
             },
             {
                 "key": "rules",

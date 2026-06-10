@@ -9,9 +9,9 @@ export default function Home() {
       <section className="hero">
         <div className="hero__copy">
           <p className="eyebrow">COC Yes · Keeper Workspace</p>
-          <h1>让每一次投掷都留在桌面中央。</h1>
+          <h1>让调查员从 Excel 里走上桌面。</h1>
           <p className="hero__lead">
-            阶段 2 正在接入可信骰子。投掷由后端结算，结果进入聊天时间线，并保留在房间日志中。
+            阶段 3 正在接入角色卡上传与解析。玩家上传 Excel 后，房间会展示属性、技能和背景摘要。
           </p>
           <div className="hero__actions">
             <a href="#status" className="button button--primary">
@@ -28,8 +28,8 @@ export default function Home() {
 
         <div className="table-card" aria-label="项目模块状态">
           <div className="table-card__header">
-            <span>Dice Ledger</span>
-            <strong>阶段 2</strong>
+            <span>Character Desk</span>
+            <strong>阶段 3</strong>
           </div>
           <div className="table-card__grid">
             {CORE_MODULES.map((module) => (

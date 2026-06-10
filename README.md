@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-当前已经完成项目规划、阶段 0 工程骨架、阶段 1 房间与文字聊天，并开始落地阶段 2 可信骰子：
+当前已经完成项目规划、阶段 0 工程骨架、阶段 1 房间与文字聊天、阶段 2 可信骰子，并开始落地阶段 3 角色卡上传与解析：
 
 - `apps/web`：Next.js 前端。
 - `apps/api`：FastAPI 后端。
@@ -13,6 +13,7 @@
 - 房间模块：创建房间、邀请码加入、成员列表、聊天消息、WebSocket 实时同步。
 - 骰子模块：后端结算骰子表达式、COC d100 检定、奖励/惩罚骰、投掷结果进入聊天。
 - 界面偏好：默认纯黑背景，并支持深灰、墨绿、深蓝、暗红等纯色背景切换。
+- 角色卡模块：上传当前 COC 七版 Excel 模板，解析基础信息、属性、技能、武器和背景摘要。
 
 ## 本地启动
 
@@ -47,6 +48,7 @@ npm.cmd run dev
 - `GET /api/rooms/{room_id}`：获取房间、成员和历史消息。
 - `POST /api/rooms/{room_id}/messages`：发送文字消息。
 - `POST /api/rooms/{room_id}/rolls`：后端生成骰子结果并写入房间消息。
+- `POST /api/rooms/{room_id}/characters/upload`：上传并解析 Excel 角色卡。
 - `WS /api/rooms/{room_id}/ws?member_id=...`：订阅房间实时更新。
 
 ## 重要约定

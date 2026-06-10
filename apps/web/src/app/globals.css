@@ -494,7 +494,8 @@ select:focus {
   cursor: pointer;
 }
 
-.dice-panel {
+.dice-panel,
+.upload-panel {
   display: grid;
   gap: 12px;
   padding: 16px;
@@ -502,7 +503,8 @@ select:focus {
   background: rgba(0, 0, 0, 0.18);
 }
 
-.dice-panel h3 {
+.dice-panel h3,
+.upload-panel h3 {
   margin: 0;
   font-size: 1.25rem;
 }
@@ -628,6 +630,105 @@ select:focus {
   background: rgba(0, 0, 0, 0.18);
 }
 
+.character-shelf {
+  display: grid;
+  gap: 18px;
+}
+
+.character-card {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.character-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.character-card__header p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.character-card__header > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.character-warnings {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(255, 138, 107, 0.35);
+  border-radius: 18px;
+  color: var(--danger);
+  background: rgba(255, 138, 107, 0.08);
+}
+
+.character-warnings p {
+  margin: 0;
+}
+
+.attribute-grid {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.attribute-grid div {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(244, 234, 216, 0.08);
+}
+
+.attribute-grid span,
+.attribute-grid small {
+  color: var(--muted);
+}
+
+.attribute-grid strong {
+  color: var(--accent);
+  font-size: 1.7rem;
+}
+
+.character-card__split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.character-card__split h3 {
+  margin-top: 0;
+}
+
+.character-card__split p {
+  color: var(--muted);
+  line-height: 1.75;
+}
+
+.skill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.skill-list span {
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(244, 234, 216, 0.08);
+  font-weight: 800;
+}
+
 @media (max-width: 860px) {
   .shell {
     width: min(100% - 28px, 720px);
@@ -640,7 +741,8 @@ select:focus {
   .room-console__setup,
   .room-board,
   .composer,
-  .dice-panel__row {
+  .dice-panel__row,
+  .character-card__split {
     grid-template-columns: 1fr;
   }
 
@@ -659,6 +761,10 @@ select:focus {
 
   .chat-message {
     max-width: 100%;
+  }
+
+  .attribute-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 

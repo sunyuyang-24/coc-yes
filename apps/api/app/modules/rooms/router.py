@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 
 from app.core.config import settings
+from app.modules.characters.parser import parse_character_card
 from app.modules.dice.roller import roll_dice
 from app.modules.dice.schemas import RollDiceRequest
 from app.modules.rooms.connection_manager import RoomConnectionManager
@@ -76,6 +77,23 @@ async def roll_in_room(room_id: str, payload: RollDiceRequest) -> dict:
     await manager.broadcast(room_id, {"type": "room_update", "room": room})
 
     return {"roll": roll_record}
+
+
+@router.post("/rooms/{room_id}/characters/upload")
+async def upload_character(room_id: str, owner_id: str = Form(..., alias="ownerId"), file: UploadFile = File(...)) -> dict:
+    try:
+        content = await file.read()
+        character = parse_character_card(content, file.filename or "character.xlsx")
+        character_record = store.add_character(room_id, owner_id, character)
+        room = store.get_room(room_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Room or member not found") from error
+
+    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+
+    return {"character": character_record}
 
 
 @router.websocket("/rooms/{room_id}/ws")
