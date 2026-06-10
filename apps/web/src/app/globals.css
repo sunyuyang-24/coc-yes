@@ -372,6 +372,19 @@ input {
   outline: none;
 }
 
+textarea {
+  width: 100%;
+  min-height: 110px;
+  border: 1px solid rgba(236, 229, 211, 0.2);
+  border-radius: 16px;
+  padding: 12px 14px;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.22);
+  font: inherit;
+  outline: none;
+  resize: vertical;
+}
+
 select {
   width: 100%;
   min-height: 48px;
@@ -389,6 +402,7 @@ input:focus {
   box-shadow: 0 0 0 3px rgba(213, 255, 119, 0.15);
 }
 
+textarea:focus,
 select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(213, 255, 119, 0.15);
@@ -662,6 +676,36 @@ select:focus {
   word-break: break-all;
 }
 
+.character-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.character-editor {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.character-editor__grid,
+.attribute-editor {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.attribute-editor {
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+}
+
+.character-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .character-warnings {
   display: grid;
   gap: 8px;
@@ -700,6 +744,18 @@ select:focus {
   font-size: 1.7rem;
 }
 
+.inline-roll {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--accent);
+  background: rgba(213, 255, 119, 0.08);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .character-card__split {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -721,12 +777,25 @@ select:focus {
   gap: 8px;
 }
 
-.skill-list span {
+.skill-list button {
   padding: 7px 10px;
+  border: 0;
   border-radius: 999px;
   color: var(--text);
   background: rgba(244, 234, 216, 0.08);
+  font: inherit;
   font-weight: 800;
+  cursor: pointer;
+}
+
+.skill-list button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.keeper-notes {
+  margin-top: 12px;
+  color: var(--accent) !important;
 }
 
 @media (max-width: 860px) {
@@ -742,7 +811,9 @@ select:focus {
   .room-board,
   .composer,
   .dice-panel__row,
-  .character-card__split {
+  .character-card__split,
+  .character-editor__grid,
+  .attribute-editor {
     grid-template-columns: 1fr;
   }
 

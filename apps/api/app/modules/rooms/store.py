@@ -126,6 +126,7 @@ class RoomStore:
                 "roomId": room_id,
                 "ownerId": owner_id,
                 "ownerName": owner["displayName"],
+                "keeperNotes": "",
                 "createdAt": self._now(),
                 "updatedAt": self._now(),
             }
@@ -146,6 +147,45 @@ class RoomStore:
             self._save()
 
             return deepcopy(record)
+
+    def update_character(self, room_id: str, character_id: str, editor_id: str, updates: dict) -> dict:
+        with self._lock:
+            room = self._require_room(room_id)
+            editor = self._find_member(room, editor_id)
+
+            if editor["role"] != "keeper":
+                raise PermissionError("Only keeper can edit character cards")
+
+            character = self._find_character(room, character_id)
+
+            if updates.get("basic"):
+                character.setdefault("basic", {}).update(
+                    {key: str(value) for key, value in updates["basic"].items() if value is not None}
+                )
+
+            if updates.get("attributes"):
+                by_key = {attribute["key"]: attribute for attribute in character.get("attributes", [])}
+
+                for item in updates["attributes"]:
+                    attribute = by_key.get(item["key"])
+
+                    if not attribute:
+                        continue
+
+                    value = item.get("value")
+                    attribute["value"] = value
+                    attribute["half"] = value // 2 if value is not None else None
+                    attribute["fifth"] = value // 5 if value is not None else None
+
+            if "keeperNotes" in updates:
+                character["keeperNotes"] = updates.get("keeperNotes") or ""
+
+            character["updatedAt"] = self._now()
+            display_name = character.get("basic", {}).get("name") or character["sourceFileName"]
+            self._add_system_message(room, f"{editor['displayName']} 更新了角色卡「{display_name}」。")
+            self._save()
+
+            return deepcopy(character)
 
     def set_member_online(self, room_id: str, member_id: str, online: bool) -> dict:
         with self._lock:
@@ -206,6 +246,13 @@ class RoomStore:
                 return member
 
         raise KeyError("member_not_found")
+
+    def _find_character(self, room: dict, character_id: str) -> dict:
+        for character in room.get("characters", []):
+            if character["id"] == character_id:
+                return character
+
+        raise KeyError("character_not_found")
 
     def _invite_code(self) -> str:
         alphabet = string.ascii_uppercase + string.digits

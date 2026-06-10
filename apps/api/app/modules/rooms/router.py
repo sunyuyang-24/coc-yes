@@ -2,6 +2,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket,
 
 from app.core.config import settings
 from app.modules.characters.parser import parse_character_card
+from app.modules.characters.schemas import UpdateCharacterRequest
 from app.modules.dice.roller import roll_dice
 from app.modules.dice.schemas import RollDiceRequest
 from app.modules.rooms.connection_manager import RoomConnectionManager
@@ -94,6 +95,30 @@ async def upload_character(room_id: str, owner_id: str = Form(..., alias="ownerI
     await manager.broadcast(room_id, {"type": "room_update", "room": room})
 
     return {"character": character_record}
+
+
+@router.patch("/rooms/{room_id}/characters/{character_id}")
+async def update_character(room_id: str, character_id: str, payload: UpdateCharacterRequest) -> dict:
+    try:
+        character = store.update_character(
+            room_id,
+            character_id,
+            payload.editor_id,
+            {
+                "basic": payload.basic,
+                "attributes": [item.model_dump() for item in payload.attributes] if payload.attributes else None,
+                "keeperNotes": payload.keeper_notes,
+            },
+        )
+        room = store.get_room(room_id)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Room, member, or character not found") from error
+
+    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+
+    return {"character": character}
 
 
 @router.websocket("/rooms/{room_id}/ws")

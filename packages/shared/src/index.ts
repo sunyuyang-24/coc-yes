@@ -73,6 +73,7 @@ export type CharacterCard = {
   experiences: Array<Record<string, string>>;
   spells: Array<Record<string, string>>;
   warnings: string[];
+  keeperNotes: string;
   createdAt: string;
   updatedAt: string;
 };

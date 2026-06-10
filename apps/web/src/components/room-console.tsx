@@ -169,6 +169,50 @@ export function RoomConsole() {
     setNotice("投掷完成，结果已写入房间日志。");
   }
 
+  async function rollCharacterCheck(label: string, targetValue: number) {
+    if (!room || !memberId) {
+      return;
+    }
+
+    await apiRequest(`/api/rooms/${room.id}/rolls`, {
+      method: "POST",
+      body: JSON.stringify({
+        rollerId: memberId,
+        expression: "1d100",
+        label,
+        targetValue,
+        bonusPenalty: 0
+      })
+    });
+
+    setNotice(`已发起 ${label} 检定。`);
+  }
+
+  async function updateCharacter(
+    characterId: string,
+    basic: Record<string, string>,
+    attributes: Array<{ key: string; value: number | null }>,
+    keeperNotes: string
+  ) {
+    if (!room || !memberId) {
+      return;
+    }
+
+    await apiRequest(`/api/rooms/${room.id}/characters/${characterId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        editorId: memberId,
+        basic,
+        attributes,
+        keeperNotes
+      })
+    });
+
+    const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`);
+    setRoom(detail.room);
+    setNotice("角色卡已保存。");
+  }
+
   async function uploadCharacter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -386,7 +430,14 @@ export function RoomConsole() {
       {room?.characters?.length ? (
         <section className="character-shelf">
           {room.characters.map((character) => (
-            <CharacterCardView character={character} key={character.id} />
+            <CharacterCardView
+              canEdit={currentMember?.role === "keeper"}
+              canRoll={Boolean(currentMember)}
+              character={character}
+              key={character.id}
+              onRoll={rollCharacterCheck}
+              onUpdate={updateCharacter}
+            />
           ))}
         </section>
       ) : null}
@@ -423,9 +474,66 @@ function DiceRollView({ roll }: { roll: DiceRollResult }) {
   );
 }
 
-function CharacterCardView({ character }: { character: CharacterCard }) {
+function CharacterCardView({
+  canEdit,
+  canRoll,
+  character,
+  onRoll,
+  onUpdate
+}: {
+  canEdit: boolean;
+  canRoll: boolean;
+  character: CharacterCard;
+  onRoll: (label: string, targetValue: number) => Promise<void>;
+  onUpdate: (
+    characterId: string,
+    basic: Record<string, string>,
+    attributes: Array<{ key: string; value: number | null }>,
+    keeperNotes: string
+  ) => Promise<void>;
+}) {
   const visibleSkills = character.skills.slice(0, 12);
   const name = character.basic.name || character.sourceFileName;
+  const [editing, setEditing] = useState(false);
+  const [basicDraft, setBasicDraft] = useState({
+    name: character.basic.name || "",
+    occupation: character.basic.occupation || "",
+    age: character.basic.age || "",
+    gender: character.basic.gender || ""
+  });
+  const [attributeDrafts, setAttributeDrafts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(character.attributes.map((attribute) => [attribute.key, String(attribute.value ?? "")]))
+  );
+  const [keeperNotes, setKeeperNotes] = useState(character.keeperNotes || "");
+
+  function beginEdit() {
+    setBasicDraft({
+      name: character.basic.name || "",
+      occupation: character.basic.occupation || "",
+      age: character.basic.age || "",
+      gender: character.basic.gender || ""
+    });
+    setAttributeDrafts(
+      Object.fromEntries(character.attributes.map((attribute) => [attribute.key, String(attribute.value ?? "")]))
+    );
+    setKeeperNotes(character.keeperNotes || "");
+    setEditing(true);
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    await onUpdate(
+      character.id,
+      basicDraft,
+      character.attributes.map((attribute) => ({
+        key: attribute.key,
+        value: attributeDrafts[attribute.key] ? Number(attributeDrafts[attribute.key]) : null
+      })),
+      keeperNotes
+    );
+    setEditing(false);
+  }
 
   return (
     <article className="character-card">
@@ -439,6 +547,75 @@ function CharacterCardView({ character }: { character: CharacterCard }) {
         </div>
         <span>{character.sourceFileName}</span>
       </div>
+
+      {canEdit ? (
+        <div className="character-actions">
+          <button className="text-button" onClick={beginEdit} type="button">
+            KP 编辑
+          </button>
+        </div>
+      ) : null}
+
+      {editing ? (
+        <form className="character-editor" onSubmit={saveEdit}>
+          <div className="character-editor__grid">
+            <label>
+              姓名
+              <input
+                value={basicDraft.name}
+                onChange={(event) => setBasicDraft((draft) => ({ ...draft, name: event.target.value }))}
+              />
+            </label>
+            <label>
+              职业
+              <input
+                value={basicDraft.occupation}
+                onChange={(event) => setBasicDraft((draft) => ({ ...draft, occupation: event.target.value }))}
+              />
+            </label>
+            <label>
+              年龄
+              <input
+                value={basicDraft.age}
+                onChange={(event) => setBasicDraft((draft) => ({ ...draft, age: event.target.value }))}
+              />
+            </label>
+            <label>
+              性别
+              <input
+                value={basicDraft.gender}
+                onChange={(event) => setBasicDraft((draft) => ({ ...draft, gender: event.target.value }))}
+              />
+            </label>
+          </div>
+          <div className="attribute-editor">
+            {character.attributes.map((attribute) => (
+              <label key={attribute.key}>
+                {attribute.key}
+                <input
+                  inputMode="numeric"
+                  value={attributeDrafts[attribute.key] ?? ""}
+                  onChange={(event) =>
+                    setAttributeDrafts((draft) => ({ ...draft, [attribute.key]: event.target.value }))
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          <label>
+            KP 备注
+            <textarea value={keeperNotes} onChange={(event) => setKeeperNotes(event.target.value)} />
+          </label>
+          <div className="character-editor__actions">
+            <button className="button button--primary" type="submit">
+              保存角色卡
+            </button>
+            <button className="button button--ghost" onClick={() => setEditing(false)} type="button">
+              取消
+            </button>
+          </div>
+        </form>
+      ) : null}
 
       {character.warnings.length ? (
         <div className="character-warnings">
@@ -456,6 +633,15 @@ function CharacterCardView({ character }: { character: CharacterCard }) {
             <small>
               困难 {attribute.half ?? "?"} · 极难 {attribute.fifth ?? "?"}
             </small>
+            {canRoll && attribute.value ? (
+              <button
+                className="inline-roll"
+                onClick={() => onRoll(`${name} · ${attribute.label}`, attribute.value ?? 0)}
+                type="button"
+              >
+                投掷
+              </button>
+            ) : null}
           </div>
         ))}
       </div>
@@ -465,15 +651,21 @@ function CharacterCardView({ character }: { character: CharacterCard }) {
           <h3>技能预览</h3>
           <div className="skill-list">
             {visibleSkills.map((skill) => (
-              <span key={`${skill.name}-${skill.value}`}>
+              <button
+                disabled={!canRoll || !skill.value}
+                key={`${skill.name}-${skill.value}`}
+                onClick={() => skill.value && onRoll(`${name} · ${skill.name}`, skill.value)}
+                type="button"
+              >
                 {skill.name} {skill.value ?? "?"}
-              </span>
+              </button>
             ))}
           </div>
         </div>
         <div>
           <h3>背景摘要</h3>
           <p>{firstFilled(character.background) || "暂未读取到背景文本。"}</p>
+          {character.keeperNotes ? <p className="keeper-notes">KP 备注：{character.keeperNotes}</p> : null}
         </div>
       </div>
     </article>
