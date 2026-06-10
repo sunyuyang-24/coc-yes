@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Build outputs
+.next/
+dist/
+build/
+coverage/
+
+# Local runtime data
+uploads/
+data/uploads/
+data/rules/source/
+data/rules/indexes/
+
+# Local source materials and generated indexes
+*.pdf
+*.xlsx
+*.xls
+*.docx
+*.pptx
+*.base
+*.sqlite
+*.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
