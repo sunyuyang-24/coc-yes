@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from app.core.config import settings
+from app.modules.dice.roller import roll_dice
+from app.modules.dice.schemas import RollDiceRequest
 from app.modules.rooms.connection_manager import RoomConnectionManager
 from app.modules.rooms.schemas import CreateRoomRequest, JoinRoomRequest, SendMessageRequest
 from app.modules.rooms.store import RoomStore
@@ -53,6 +55,27 @@ async def send_message(room_id: str, payload: SendMessageRequest) -> dict:
     await manager.broadcast(room_id, {"type": "room_update", "room": room})
 
     return {"message": message}
+
+
+@router.post("/rooms/{room_id}/rolls")
+async def roll_in_room(room_id: str, payload: RollDiceRequest) -> dict:
+    try:
+        roll = roll_dice(
+            payload.expression,
+            target_value=payload.target_value,
+            bonus_penalty=payload.bonus_penalty,
+            label=payload.label,
+        )
+        roll_record = store.add_dice_roll(room_id, payload.roller_id, roll)
+        room = store.get_room(room_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Room or member not found") from error
+
+    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+
+    return {"roll": roll_record}
 
 
 @router.websocket("/rooms/{room_id}/ws")

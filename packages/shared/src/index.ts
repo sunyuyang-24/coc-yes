@@ -14,14 +14,44 @@ export type RoomMember = {
   online: boolean;
 };
 
+export type DiceBreakdown = {
+  kind: "standard" | "coc_d100";
+  count: number;
+  sides: number;
+  rolls: number[];
+  modifier: number;
+  tensRolls?: number[];
+  ones?: number;
+  chosenTens?: number;
+};
+
+export type DiceRollResult = {
+  id: string;
+  roomId: string;
+  rollerId: string;
+  rollerName: string;
+  rollerRole: RoomMemberRole;
+  expression: string;
+  label: string | null;
+  total: number;
+  breakdown: DiceBreakdown[];
+  targetValue: number | null;
+  bonusPenalty: number;
+  successLevel: "critical" | "extreme" | "hard" | "regular" | "failure" | "fumble" | null;
+  successLabel: string | null;
+  isSuccess: boolean | null;
+  createdAt: string;
+};
+
 export type ChatMessage = {
   id: string;
-  type: "text" | "system";
+  type: "text" | "system" | "dice_roll";
   roomId: string;
   senderId: string | null;
   senderName: string;
   senderRole: RoomMemberRole | "system";
   content: string;
+  roll?: DiceRollResult;
   createdAt: string;
 };
 
@@ -33,6 +63,7 @@ export type RoomDetail = {
   createdAt: string;
   members: RoomMember[];
   messages: ChatMessage[];
+  rolls?: DiceRollResult[];
 };
 
 export type BuildPhase = {
@@ -56,7 +87,7 @@ export const CORE_MODULES: CoreModule[] = [
   {
     key: "dice",
     label: "骰子",
-    stage: "planned"
+    stage: "active"
   },
   {
     key: "characters",
@@ -87,7 +118,7 @@ export const BUILD_PHASES: BuildPhase[] = [
     key: "dice",
     order: 2,
     label: "可信骰子",
-    goal: "后端结算投掷，结果进入聊天和日志。"
+    goal: "后端结算投掷，结果进入聊天和日志。当前正在落地。"
   },
   {
     key: "character-card",

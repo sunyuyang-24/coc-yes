@@ -36,6 +36,7 @@ class RoomStore:
                     }
                 ],
                 "messages": [],
+                "rolls": [],
             }
 
             self._state["rooms"][room_id] = room
@@ -81,6 +82,37 @@ class RoomStore:
             room["messages"].append(message)
             self._save()
             return deepcopy(message)
+
+    def add_dice_roll(self, room_id: str, roller_id: str, roll: dict) -> dict:
+        with self._lock:
+            room = self._require_room(room_id)
+            roller = self._find_member(room, roller_id)
+            roll_record = {
+                **roll,
+                "id": uuid4().hex,
+                "roomId": room_id,
+                "rollerId": roller_id,
+                "rollerName": roller["displayName"],
+                "rollerRole": roller["role"],
+                "createdAt": self._now(),
+            }
+            message = {
+                "id": uuid4().hex,
+                "type": "dice_roll",
+                "roomId": room_id,
+                "senderId": roller_id,
+                "senderName": roller["displayName"],
+                "senderRole": roller["role"],
+                "content": self._format_roll_message(roll_record),
+                "roll": roll_record,
+                "createdAt": roll_record["createdAt"],
+            }
+
+            room.setdefault("rolls", []).append(roll_record)
+            room["messages"].append(message)
+            self._save()
+
+            return deepcopy(roll_record)
 
     def set_member_online(self, room_id: str, member_id: str, online: bool) -> dict:
         with self._lock:
@@ -154,3 +186,12 @@ class RoomStore:
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    def _format_roll_message(self, roll: dict) -> str:
+        label = f"「{roll['label']}」" if roll.get("label") else roll["expression"]
+        result = f"{label} 投掷结果 {roll['total']}"
+
+        if roll.get("successLabel"):
+            result = f"{result}，{roll['successLabel']}"
+
+        return result

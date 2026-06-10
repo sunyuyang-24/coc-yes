@@ -316,7 +316,24 @@ input {
   outline: none;
 }
 
+select {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid rgba(236, 229, 211, 0.2);
+  border-radius: 16px;
+  padding: 0 14px;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.22);
+  font: inherit;
+  outline: none;
+}
+
 input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(213, 255, 119, 0.15);
+}
+
+select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(213, 255, 119, 0.15);
 }
@@ -421,6 +438,43 @@ input:focus {
   cursor: pointer;
 }
 
+.dice-panel {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.dice-panel h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.dice-panel__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.quick-rolls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-rolls button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 12px;
+  color: var(--text);
+  background: rgba(244, 234, 216, 0.08);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .chat-panel {
   display: grid;
   grid-template-rows: minmax(360px, 58dvh) auto;
@@ -448,6 +502,12 @@ input:focus {
   background: rgba(213, 255, 119, 0.08);
 }
 
+.chat-message--dice_roll {
+  background:
+    linear-gradient(145deg, rgba(213, 255, 119, 0.14), rgba(244, 234, 216, 0.08)),
+    rgba(244, 234, 216, 0.08);
+}
+
 .chat-message__meta {
   display: flex;
   justify-content: space-between;
@@ -460,6 +520,47 @@ input:focus {
 .chat-message p {
   margin: 0;
   line-height: 1.7;
+}
+
+.roll-card {
+  display: grid;
+  gap: 8px;
+}
+
+.roll-card div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.roll-card span {
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.roll-card strong {
+  color: var(--accent);
+  font-size: 2.2rem;
+  line-height: 1;
+}
+
+.roll-card p {
+  margin: 0;
+  font-weight: 900;
+}
+
+.roll-card small {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.roll-card__success {
+  color: var(--accent);
+}
+
+.roll-card__fail {
+  color: var(--danger);
 }
 
 .composer {
@@ -482,7 +583,8 @@ input:focus {
   .roadmap,
   .room-console__setup,
   .room-board,
-  .composer {
+  .composer,
+  .dice-panel__row {
     grid-template-columns: 1fr;
   }
 

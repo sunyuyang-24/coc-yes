@@ -2,7 +2,7 @@
 
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { RoomDetail } from "@coc-yes/shared";
+import type { DiceRollResult, RoomDetail } from "@coc-yes/shared";
 import { apiRequest, wsUrl } from "@/lib/api";
 
 type RoomResponse = {
@@ -29,6 +29,10 @@ export function RoomConsole() {
   const [inviteCode, setInviteCode] = useState("");
   const [playerName, setPlayerName] = useState("调查员");
   const [draft, setDraft] = useState("");
+  const [rollLabel, setRollLabel] = useState("侦查");
+  const [expression, setExpression] = useState("1d100");
+  const [targetValue, setTargetValue] = useState("60");
+  const [bonusPenalty, setBonusPenalty] = useState("0");
   const [notice, setNotice] = useState("创建或加入房间后，聊天会实时同步。");
   const messageEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -141,6 +145,29 @@ export function RoomConsole() {
     });
   }
 
+  async function rollDice(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!room || !memberId) {
+      return;
+    }
+
+    setNotice("正在投掷骰子...");
+
+    await apiRequest(`/api/rooms/${room.id}/rolls`, {
+      method: "POST",
+      body: JSON.stringify({
+        rollerId: memberId,
+        expression,
+        label: rollLabel || null,
+        targetValue: targetValue ? Number(targetValue) : null,
+        bonusPenalty: Number(bonusPenalty)
+      })
+    });
+
+    setNotice("投掷完成，结果已写入房间日志。");
+  }
+
   function leaveLocalRoom() {
     setRoom(null);
     setMemberId(null);
@@ -231,6 +258,49 @@ export function RoomConsole() {
               ))}
             </div>
 
+            <form className="dice-panel" onSubmit={rollDice}>
+              <p className="panel__kicker">Dice</p>
+              <h3>可信投掷</h3>
+              <label>
+                标签
+                <input value={rollLabel} onChange={(event) => setRollLabel(event.target.value)} />
+              </label>
+              <label>
+                表达式
+                <input value={expression} onChange={(event) => setExpression(event.target.value)} />
+              </label>
+              <div className="dice-panel__row">
+                <label>
+                  目标值
+                  <input
+                    inputMode="numeric"
+                    value={targetValue}
+                    onChange={(event) => setTargetValue(event.target.value)}
+                  />
+                </label>
+                <label>
+                  奖惩骰
+                  <select value={bonusPenalty} onChange={(event) => setBonusPenalty(event.target.value)}>
+                    <option value="2">奖励 2</option>
+                    <option value="1">奖励 1</option>
+                    <option value="0">无</option>
+                    <option value="-1">惩罚 1</option>
+                    <option value="-2">惩罚 2</option>
+                  </select>
+                </label>
+              </div>
+              <div className="quick-rolls">
+                {["1d100", "1d6", "1d10", "2d6+3"].map((item) => (
+                  <button key={item} type="button" onClick={() => setExpression(item)}>
+                    {item}
+                  </button>
+                ))}
+              </div>
+              <button className="button button--primary" type="submit">
+                后端投掷
+              </button>
+            </form>
+
             <button className="text-button" type="button" onClick={leaveLocalRoom}>
               仅退出本地视图
             </button>
@@ -244,7 +314,11 @@ export function RoomConsole() {
                     <strong>{message.senderName}</strong>
                     <span>{formatTime(message.createdAt)}</span>
                   </div>
-                  <p>{message.content}</p>
+                  {message.type === "dice_roll" && message.roll ? (
+                    <DiceRollView roll={message.roll} />
+                  ) : (
+                    <p>{message.content}</p>
+                  )}
                 </article>
               ))}
               <div ref={messageEndRef} />
@@ -264,6 +338,35 @@ export function RoomConsole() {
         </div>
       ) : null}
     </section>
+  );
+}
+
+function DiceRollView({ roll }: { roll: DiceRollResult }) {
+  const detail = roll.breakdown
+    .map((item) => {
+      if (item.kind === "coc_d100" && item.tensRolls) {
+        return `十位[${item.tensRolls.join(", ")}] 个位[${item.ones}]`;
+      }
+
+      const modifier = item.modifier ? ` ${item.modifier > 0 ? "+" : ""}${item.modifier}` : "";
+      return `${item.count}d${item.sides}: [${item.rolls.join(", ")}]${modifier}`;
+    })
+    .join(" · ");
+
+  return (
+    <div className="roll-card">
+      <div>
+        <span>{roll.label || roll.expression}</span>
+        <strong>{roll.total}</strong>
+      </div>
+      {roll.successLabel ? (
+        <p className={roll.isSuccess ? "roll-card__success" : "roll-card__fail"}>{roll.successLabel}</p>
+      ) : null}
+      <small>
+        {detail}
+        {roll.targetValue ? ` · 目标 ${roll.targetValue}` : ""}
+      </small>
+    </div>
   );
 }
 
