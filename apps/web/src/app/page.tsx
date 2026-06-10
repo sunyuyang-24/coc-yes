@@ -1,4 +1,5 @@
 import { ApiStatus } from "@/components/api-status";
+import { RoomConsole } from "@/components/room-console";
 import { BUILD_PHASES, CORE_MODULES } from "@coc-yes/shared";
 
 export default function Home() {
@@ -7,9 +8,9 @@ export default function Home() {
       <section className="hero">
         <div className="hero__copy">
           <p className="eyebrow">COC Yes · Keeper Workspace</p>
-          <h1>把跑团桌、角色卡、骰子和规则书放进同一个夜晚。</h1>
+          <h1>先让跑团房间真的亮起来。</h1>
           <p className="hero__lead">
-            当前先跑通工程骨架。后续会按阶段接入房间、聊天、可信骰子、角色卡解析、规则检索、录音和总结。
+            阶段 1 正在接入房间与文字聊天。KP 可以创建房间，玩家用邀请码加入，消息会通过 WebSocket 实时同步。
           </p>
           <div className="hero__actions">
             <a href="#status" className="button button--primary">
@@ -18,13 +19,16 @@ export default function Home() {
             <a href="#roadmap" className="button button--ghost">
               查看阶段路线
             </a>
+            <a href="#rooms" className="button button--ghost">
+              打开房间面板
+            </a>
           </div>
         </div>
 
         <div className="table-card" aria-label="项目模块状态">
           <div className="table-card__header">
-            <span>Foundation</span>
-            <strong>阶段 0</strong>
+            <span>Realtime Table</span>
+            <strong>阶段 1</strong>
           </div>
           <div className="table-card__grid">
             {CORE_MODULES.map((module) => (
@@ -35,6 +39,10 @@ export default function Home() {
             ))}
           </div>
         </div>
+      </section>
+
+      <section id="rooms">
+        <RoomConsole />
       </section>
 
       <section className="status-grid" id="status">

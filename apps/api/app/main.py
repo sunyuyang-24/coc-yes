@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.modules.bootstrap.router import router as bootstrap_router
 from app.modules.health.router import router as health_router
+from app.modules.rooms.router import router as rooms_router
 
 
 def create_app() -> FastAPI:
@@ -23,6 +24,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router, prefix="/api", tags=["health"])
     app.include_router(bootstrap_router, prefix="/api", tags=["bootstrap"])
+    app.include_router(rooms_router, prefix="/api", tags=["rooms"])
 
     return app
 

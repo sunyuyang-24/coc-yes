@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "@/lib/api";
 
 type HealthPayload = {
   status: string;
@@ -12,8 +13,6 @@ type RequestState =
   | { kind: "loading" }
   | { kind: "ready"; data: HealthPayload }
   | { kind: "error"; message: string };
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 export function ApiStatus() {
   const [state, setState] = useState<RequestState>({ kind: "loading" });

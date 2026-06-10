@@ -4,12 +4,13 @@
 
 ## 当前阶段
 
-当前已经完成项目规划和阶段 0 工程骨架：
+当前已经完成项目规划、阶段 0 工程骨架，并开始落地阶段 1 房间与文字聊天：
 
 - `apps/web`：Next.js 前端。
 - `apps/api`：FastAPI 后端。
 - `packages/shared`：前后端共享类型和 COC 常量。
 - `scripts/dev.mjs`：一条命令同时启动前后端。
+- 房间模块：创建房间、邀请码加入、成员列表、聊天消息、WebSocket 实时同步。
 
 ## 本地启动
 
@@ -36,6 +37,14 @@ npm.cmd run dev
 
 - 前端：http://127.0.0.1:3000
 - 后端：http://127.0.0.1:8000/api/health
+
+阶段 1 可用接口：
+
+- `POST /api/rooms`：创建房间。
+- `POST /api/rooms/join`：使用邀请码加入房间。
+- `GET /api/rooms/{room_id}`：获取房间、成员和历史消息。
+- `POST /api/rooms/{room_id}/messages`：发送文字消息。
+- `WS /api/rooms/{room_id}/ws?member_id=...`：订阅房间实时更新。
 
 ## 重要约定
 

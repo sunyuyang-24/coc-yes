@@ -4,6 +4,37 @@ export type CoreModule = {
   stage: "planned" | "active" | "done";
 };
 
+export type RoomMemberRole = "keeper" | "player";
+
+export type RoomMember = {
+  id: string;
+  displayName: string;
+  role: RoomMemberRole;
+  joinedAt: string;
+  online: boolean;
+};
+
+export type ChatMessage = {
+  id: string;
+  type: "text" | "system";
+  roomId: string;
+  senderId: string | null;
+  senderName: string;
+  senderRole: RoomMemberRole | "system";
+  content: string;
+  createdAt: string;
+};
+
+export type RoomDetail = {
+  id: string;
+  name: string;
+  status: "preparing" | "active" | "ended";
+  inviteCode: string;
+  createdAt: string;
+  members: RoomMember[];
+  messages: ChatMessage[];
+};
+
 export type BuildPhase = {
   key: string;
   order: number;
@@ -15,12 +46,12 @@ export const CORE_MODULES: CoreModule[] = [
   {
     key: "rooms",
     label: "房间",
-    stage: "planned"
+    stage: "active"
   },
   {
     key: "chat",
     label: "聊天",
-    stage: "planned"
+    stage: "active"
   },
   {
     key: "dice",
@@ -44,13 +75,13 @@ export const BUILD_PHASES: BuildPhase[] = [
     key: "foundation",
     order: 0,
     label: "项目骨架",
-    goal: "前后端启动、健康检查、工程结构固定。"
+    goal: "前后端启动、健康检查、工程结构固定。已完成。"
   },
   {
     key: "room-chat",
     order: 1,
     label: "房间与文字聊天",
-    goal: "KP 创建房间，玩家进入，同步文字消息。"
+    goal: "KP 创建房间，玩家进入，同步文字消息。当前正在落地。"
   },
   {
     key: "dice",

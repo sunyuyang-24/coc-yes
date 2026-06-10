@@ -12,12 +12,12 @@ async def bootstrap() -> dict[str, object]:
             {
                 "key": "rooms",
                 "label": "房间与成员",
-                "status": "planned",
+                "status": "active",
             },
             {
                 "key": "chat",
                 "label": "文字聊天",
-                "status": "planned",
+                "status": "active",
             },
             {
                 "key": "dice",

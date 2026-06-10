@@ -1,5 +1,9 @@
 from dataclasses import dataclass
 import os
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 def _csv_env(name: str, fallback: str) -> list[str]:
@@ -11,6 +15,7 @@ def _csv_env(name: str, fallback: str) -> list[str]:
 class Settings:
     app_name: str = os.getenv("API_APP_NAME", "COC Yes API")
     version: str = os.getenv("API_VERSION", "0.1.0")
+    data_dir: Path = Path(os.getenv("API_DATA_DIR", str(REPO_ROOT / "data" / "runtime")))
     cors_origins: list[str] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:

@@ -274,6 +274,203 @@ h2 {
   line-height: 1.65;
 }
 
+.room-console {
+  display: grid;
+  gap: 18px;
+  margin: 42px 0;
+}
+
+.room-console__setup {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.console-card {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  background: rgba(236, 229, 211, 0.09);
+  box-shadow: var(--shadow);
+}
+
+label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+input {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid rgba(236, 229, 211, 0.2);
+  border-radius: 16px;
+  padding: 0 14px;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.22);
+  font: inherit;
+  outline: none;
+}
+
+input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(213, 255, 119, 0.15);
+}
+
+.notice-line {
+  padding: 14px 18px;
+  border: 1px solid rgba(213, 255, 119, 0.26);
+  border-radius: 18px;
+  color: var(--accent);
+  background: rgba(213, 255, 119, 0.08);
+  font-weight: 800;
+}
+
+.room-board {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 18px;
+}
+
+.member-rail,
+.chat-panel {
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.member-rail {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px;
+}
+
+.invite-box {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0;
+  padding: 16px;
+  border-radius: 18px;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.invite-box span {
+  font-size: 0.82rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.invite-box strong {
+  font-size: 2rem;
+  letter-spacing: 0.14em;
+}
+
+.current-member {
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.member-list {
+  display: grid;
+  gap: 10px;
+}
+
+.member-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(244, 234, 216, 0.07);
+}
+
+.member-item small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.presence {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(184, 173, 153, 0.46);
+}
+
+.presence--online {
+  background: var(--accent);
+  box-shadow: 0 0 20px rgba(213, 255, 119, 0.7);
+}
+
+.text-button {
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-panel {
+  display: grid;
+  grid-template-rows: minmax(360px, 58dvh) auto;
+  overflow: hidden;
+}
+
+.chat-log {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.chat-message {
+  max-width: 82%;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(244, 234, 216, 0.09);
+}
+
+.chat-message--system {
+  max-width: 100%;
+  color: var(--accent);
+  background: rgba(213, 255, 119, 0.08);
+}
+
+.chat-message__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.chat-message p {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  padding: 16px;
+  border-top: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.18);
+}
+
 @media (max-width: 860px) {
   .shell {
     width: min(100% - 28px, 720px);
@@ -282,7 +479,10 @@ h2 {
 
   .hero,
   .status-grid,
-  .roadmap {
+  .roadmap,
+  .room-console__setup,
+  .room-board,
+  .composer {
     grid-template-columns: 1fr;
   }
 
@@ -297,6 +497,10 @@ h2 {
 
   .table-card {
     transform: none;
+  }
+
+  .chat-message {
+    max-width: 100%;
   }
 }
 

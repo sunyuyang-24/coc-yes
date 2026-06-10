@@ -20,6 +20,7 @@ coverage/
 # Local runtime data
 uploads/
 data/uploads/
+data/runtime/
 data/rules/source/
 data/rules/indexes/
 
