@@ -313,7 +313,7 @@ export function RoomConsole() {
           <aside className="member-rail">
             <div>
               <p className="panel__kicker">Room</p>
-              <h2>{room.name}</h2>
+              <h2>{room.name} <span className={`room-status room-status--${room.status}`}>{room.status === "preparing" ? "准备中" : room.status === "active" ? "进行中" : "已结束"}</span></h2>
               <div className="invite-box">
                 <span>邀请码</span>
                 <strong>{room.inviteCode}</strong>
@@ -331,7 +331,7 @@ export function RoomConsole() {
                   <span className={member.online ? "presence presence--online" : "presence"} />
                   <div>
                     <strong>{member.displayName}</strong>
-                    <small>{member.role === "keeper" ? "KP" : "玩家"}</small>
+                    <small>{member.role === "keeper" ? "KP" : "玩家"}{(room?.characters || []).find((c) => c.ownerId === member.id) ? " · " + ((room?.characters || []).find((c) => c.ownerId === member.id)?.basic?.name || "角色") : ""}</small>
                   </div>
                 </div>
               ))}
@@ -456,6 +456,28 @@ export function RoomConsole() {
           }}
         />
       </section>
+
+      {room?.rolls && room.rolls.length > 0 && (
+        <section className="rolls-log">
+          <h3>投掷日志 ({room.rolls.length})</h3>
+          <div className="rolls-log__list">
+            {[...room.rolls].reverse().slice(0, 50).map((roll) => (
+              <div key={roll.id} className={`rolls-log__item ${roll.hidden ? "rolls-log__item--hidden" : ""}`}>
+                <span className="rolls-log__time">{formatTime(roll.createdAt)}</span>
+                <span className="rolls-log__roller">{roll.rollerName}</span>
+                <span className="rolls-log__expr">{roll.expression}</span>
+                {roll.hidden ? (
+                  <span className="rolls-log__result rolls-log__result--hidden">暗骰</span>
+                ) : (
+                  <span className={`rolls-log__result rolls-log__result--${roll.successLevel || "none"}`}>
+                    {roll.total}{roll.successLabel ? ` (${roll.successLabel})` : ""}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {room && memberId ? (
         <SummaryPanel
@@ -713,8 +735,56 @@ function CharacterCardView({
           )}
         </div>
         <div>
-          <h3>背景摘要</h3>
-          <p>{firstFilled(character.background) || "暂未读取到背景文本。"}</p>
+          <h3>背景</h3>
+          <div className="bg-detail">
+            {Object.entries(character.background).filter(([,v]) => v).map(([k, v]) => (
+              <div key={k} className="bg-item">
+                <span className="bg-item__label">{k}</span>
+                <span className="bg-item__value">{v}</span>
+              </div>
+            ))}
+            {Object.values(character.background).every(v => !v) && <p className="muted">暂未读取到背景文本</p>}
+          </div>
+
+          {character.weapons && character.weapons.length > 0 && (
+            <><h3>武器</h3>
+            <div className="weapon-list">
+              {character.weapons.map((w, i) => (
+                <div key={i} className="weapon-row">
+                  <span className="weapon-row__name">{w.name || "武器"}</span>
+                  <span className="weapon-row__dmg">{w.damage || "??"}</span>
+                  {canRoll && w.skill && (
+                    <button className="inline-roll" onClick={() => {
+                      const sn = String(w.skill || "");
+                      const sk = character.skills.find(s => s.name === sn);
+                      if (sk?.value) onRoll(name + " · " + sn, sk.value);
+                    }} type="button">投掷</button>
+                  )}
+                </div>
+              ))}
+            </div></>
+          )}
+
+          {character.spells && character.spells.length > 0 && (
+            <><h3>法术</h3>
+            <div className="bg-detail">
+              {character.spells.map((s, i) => (
+                <div key={i} className="bg-item">
+                  <span className="bg-item__label">{s.name || "法术"}</span>
+                  <span className="bg-item__value">{s.cost || ""}</span>
+                </div>
+              ))}
+            </div></>
+          )}
+
+          {character.experiences && character.experiences.length > 0 && (
+            <details className="character-history">
+              <summary>调查员经历</summary>
+              {character.experiences.map((exp, i) => (
+                <p key={i} className="muted">{typeof exp === "string" ? exp : exp.text || JSON.stringify(exp)}</p>
+              ))}
+            </details>
+          )}
           {character.keeperNotes ? <p className="keeper-notes">KP 备注：{character.keeperNotes}</p> : null}
         </div>
       </div>
