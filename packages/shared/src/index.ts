@@ -87,7 +87,7 @@ export type CharacterCard = {
 
 export type ChatMessage = {
   id: string;
-  type: "text" | "system" | "dice_roll" | "private";
+  type: "text" | "system" | "dice_roll" | "private" | "voice";
   roomId: string;
   senderId: string | null;
   senderName: string;

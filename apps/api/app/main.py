@@ -4,8 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.modules.bootstrap.router import router as bootstrap_router
 from app.modules.health.router import router as health_router
-from app.modules.rooms.router import router as rooms_router
+from app.modules.rooms.router import router as rooms_router, room_socket
 from app.modules.rules.router import router as rules_router
+from fastapi import WebSocket
 
 
 def create_app() -> FastAPI:
@@ -27,6 +28,12 @@ def create_app() -> FastAPI:
     app.include_router(bootstrap_router, prefix="/api", tags=["bootstrap"])
     app.include_router(rooms_router, prefix="/api", tags=["rooms"])
     app.include_router(rules_router, prefix="/api", tags=["rules"])
+
+
+
+    @app.websocket("/api/rooms/{room_id}/ws")
+    async def ws_room(websocket: WebSocket, room_id: str, member_id: str = ""):
+        await room_socket(websocket, room_id, member_id)
 
     return app
 

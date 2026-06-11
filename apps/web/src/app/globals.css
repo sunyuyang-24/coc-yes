@@ -2583,3 +2583,56 @@ select:focus {
   padding: 0 14px;
   font-size: 1.1rem;
 }
+
+/* ------------------------------------------------------------------ */
+/* Voice Room KP controls + device selector
+/* ------------------------------------------------------------------ */
+
+.voice-room__device {
+  margin-right: 8px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 1.1rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.voice-room__device option {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.voice-peer__kp-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: 6px;
+}
+
+.voice-peer__kp-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.voice-peer__kp-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.voice-peer__kp-btn--kick:hover {
+  background: rgba(255, 138, 107, 0.25);
+  border-color: rgba(255, 138, 107, 0.4);
+  color: var(--danger);
+}
