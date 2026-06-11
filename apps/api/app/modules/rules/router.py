@@ -68,8 +68,10 @@ def search_rules(req: RuleSearchRequest):
 
 
 @router.post("/rules/rebuild-index")
-def rebuild_index():
-    """Force rebuild the index (e.g. after PDF update)."""
+def rebuild_index(admin_key: str = ""):
+    """Force rebuild the index (e.g. after PDF update). Requires admin key."""
+    if admin_key != settings.admin_key:
+        raise HTTPException(status_code=403, detail="需要管理员密钥")
     if not _DEFAULT_PDF.exists():
         raise HTTPException(status_code=503, detail="规则书PDF文件未找到")
     _INDEX_CACHE.unlink(missing_ok=True)

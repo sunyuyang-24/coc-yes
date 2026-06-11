@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.modules.bootstrap.router import router as bootstrap_router
 from app.modules.health.router import router as health_router
 from app.modules.rooms.router import router as rooms_router, room_socket
@@ -15,6 +16,14 @@ def create_app() -> FastAPI:
         version=settings.version,
         description="Online Call of Cthulhu table assistant API.",
     )
+
+    @app.middleware("http")
+    async def rate_limit_middleware(request, call_next):
+        # 跳过 WebSocket 和健康检查路由的限流
+        if request.url.path.endswith("/ws") or request.url.path == "/api/health":
+            return await call_next(request)
+        await limiter(request)
+        return await call_next(request)
 
     app.add_middleware(
         CORSMiddleware,
