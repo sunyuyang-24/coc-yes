@@ -85,7 +85,7 @@ export type CharacterCard = {
 
 export type ChatMessage = {
   id: string;
-  type: "text" | "system" | "dice_roll";
+  type: "text" | "system" | "dice_roll" | "private";
   roomId: string;
   senderId: string | null;
   senderName: string;
@@ -93,6 +93,7 @@ export type ChatMessage = {
   content: string;
   roll?: DiceRollResult;
   replyTo?: { id: string; senderName: string; content: string };
+  privateTo?: string;
   createdAt: string;
 };
 

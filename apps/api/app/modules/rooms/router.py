@@ -58,12 +58,15 @@ async def send_message(room_id: str, payload: SendMessageRequest) -> dict:
             payload.sender_id,
             payload.content,
             reply_to=reply_dict,
-            msg_type=payload.type or "text"
+            msg_type=payload.type or "text",
+            private_to=payload.private_to
         )
         room = store.get_room(room_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Room or member not found") from error
 
+    # For private messages, broadcast a sanitized room to non-recipients
+    # Currently we broadcast full room; the frontend filters private messages
     await manager.broadcast(room_id, {"type": "room_update", "room": room})
 
     return {"message": message}

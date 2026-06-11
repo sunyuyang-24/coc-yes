@@ -66,7 +66,7 @@ class RoomStore:
         with self._lock:
             return deepcopy(self._require_room(room_id))
 
-    def add_message(self, room_id: str, sender_id: str | None, content: str, reply_to: dict | None = None, msg_type: str = "text") -> dict:
+    def add_message(self, room_id: str, sender_id: str | None, content: str, reply_to: dict | None = None, msg_type: str = "text", private_to: str | None = None) -> dict:
         with self._lock:
             room = self._require_room(room_id)
             if sender_id:
@@ -78,7 +78,7 @@ class RoomStore:
                 sender_role = "system"
             message: dict = {
                 "id": uuid4().hex,
-                "type": msg_type,
+                "type": msg_type if not private_to else "private",
                 "roomId": room_id,
                 "senderId": sender_id,
                 "senderName": sender_name,
@@ -88,6 +88,8 @@ class RoomStore:
             }
             if reply_to:
                 message["replyTo"] = reply_to
+            if private_to:
+                message["privateTo"] = private_to
             room["messages"].append(message)
             self._save()
             return deepcopy(message)

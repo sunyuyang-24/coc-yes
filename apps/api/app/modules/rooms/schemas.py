@@ -27,3 +27,4 @@ class SendMessageRequest(CamelModel):
     content: str = Field(min_length=1, max_length=2000)
     reply_to: Optional[ReplyToRef] = Field(default=None, alias="replyTo")
     type: Optional[str] = Field(default="text")
+    private_to: Optional[str] = Field(default=None, alias="privateTo")
