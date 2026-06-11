@@ -174,30 +174,30 @@ export function RoomConsole() {
       <section className="setup-screens">
         <form className="setup-card" onSubmit={createRoom}>
           <p className="panel__kicker">Keeper</p>
-          <h2>??????</h2>
+          <h2>创建房间</h2>
           <div className="setup-card__fields">
-            <label>????<input value={roomName} onChange={(e) => setRoomName(e.target.value)} /></label>
-            <label>KP ??<input value={keeperName} onChange={(e) => setKeeperName(e.target.value)} /></label>
-            <label>???? <small>?????????</small><input value={roomPassword} onChange={(e) => setRoomPassword(e.target.value)} placeholder="???????" /></label>
+            <label>房间名<input value={roomName} onChange={(e) => setRoomName(e.target.value)} /></label>
+            <label>KP 名称<input value={keeperName} onChange={(e) => setKeeperName(e.target.value)} /></label>
+            <label>密码 <small>（选填）</small><input value={roomPassword} onChange={(e) => setRoomPassword(e.target.value)} placeholder="无密码" /></label>
           </div>
           <div className="setup-card__actions">
-            <button className="button button--primary" type="submit">????</button>
+            <button className="button button--primary" type="submit">创建</button>
           </div>
         </form>
         <form className="setup-card" onSubmit={joinRoom}>
           <p className="panel__kicker">Investigator</p>
-          <h2>??????</h2>
+          <h2>加入房间</h2>
           <div className="setup-card__fields">
-            <label>???<input value={inviteCode} onChange={(e) => setInviteCode(e.target.value.toUpperCase())} placeholder="?? A1B2C3" /></label>
-            <label>????<input value={playerName} onChange={(e) => setPlayerName(e.target.value)} /></label>
-            <label>???? <small>?????????</small><input value={joinPassword} onChange={(e) => setJoinPassword(e.target.value)} placeholder="???????" /></label>
+            <label>邀请码<input value={inviteCode} onChange={(e) => setInviteCode(e.target.value.toUpperCase())} placeholder="如 A1B2C3" /></label>
+            <label>显示名<input value={playerName} onChange={(e) => setPlayerName(e.target.value)} /></label>
+            <label>密码 <small>（选填）</small><input value={joinPassword} onChange={(e) => setJoinPassword(e.target.value)} placeholder="无密码" /></label>
             <label className="spectator-toggle">
               <input type="checkbox" checked={joinAsSpectator} onChange={(e) => setJoinAsSpectator(e.target.checked)} />
-              ????????????????????
+              以观察者身份加入（只看不说）
             </label>
           </div>
           <div className="setup-card__actions">
-            <button className="button button--ghost" type="submit">????</button>
+            <button className="button button--ghost" type="submit">加入</button>
           </div>
         </form>
       </section>
@@ -344,13 +344,13 @@ export function RoomConsole() {
         {/* Center Chat Column */}
         <div className="chat-column">
           <div className="chat-column__search">
-            <input placeholder="??????..." value={messageSearch} onChange={(e) => setMessageSearch(e.target.value)} />
-            {messageSearch && <button className="button button--ghost button--sm" onClick={() => setMessageSearch("")} type="button">??</button>}
+            <input placeholder="搜索消息..." value={messageSearch} onChange={(e) => setMessageSearch(e.target.value)} />
+            {messageSearch && <button className="button button--ghost button--sm" onClick={() => setMessageSearch("")} type="button">清除</button>}
           </div>
           <div className="chat-column__messages">
             {filteredMessages.length === 0 ? (
               <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "32px 16px", fontSize: "14px" }}>
-                {messageSearch ? "???????" : "???????????????"}
+                {messageSearch ? "无匹配消息" : "暂无消息，开始聊天吧"}
               </p>
             ) : (
               filteredMessages.map((message) => {
@@ -367,8 +367,8 @@ export function RoomConsole() {
                         <span className={`chat-bubble__sender ${isKeeperMsg ? "chat-bubble__sender--kp" : "chat-bubble__sender--player"}`}>
                           {message.senderName}
                         </span>
-                        {isHidden && <span style={{ fontSize: "10px", color: "var(--error)" }}>??</span>}
-                        {isPrivate && <span style={{ fontSize: "10px", color: "#7C6FF7" }}>???</span>}
+                        {isHidden && <span style={{ fontSize: "10px", color: "var(--error)" }}>暗投</span>}
+                        {isPrivate && <span style={{ fontSize: "10px", color: "#7C6FF7" }}>私密</span>}
                         <span className="chat-bubble__time">{formatTime(message.createdAt)}</span>
                       </div>
                     )}
@@ -609,7 +609,7 @@ export function RoomConsole() {
                     <div>
                       <div className="player-mini-card__name">{char?.basic?.name || member.displayName}</div>
                       <div className="player-mini-card__player">
-                        {member.displayName} {member.role === "keeper" ? "? KP" : ""} {member.online ? "??" : "??"}
+                        {member.displayName} {member.role === "keeper" ? "· KP" : ""} {member.online ? "在线" : "离线"}
                       </div>
                     </div>
                   </div>
@@ -660,7 +660,7 @@ export function RoomConsole() {
                     </div>
                   )}
                   {member.role !== "keeper" && !char && (
-                    <p style={{ fontSize: "11px", color: "var(--text-muted)", textAlign: "center", padding: "4px" }}>?????</p>
+                    <p style={{ fontSize: "11px", color: "var(--text-muted)", textAlign: "center", padding: "4px" }}>未上传角色卡</p>
                   )}
                 </div>
               );
@@ -694,7 +694,7 @@ export function RoomConsole() {
         <div className="modal-overlay" onClick={() => setSelectedCharId(null)}>
           <div className="drawer" onClick={(e) => e.stopPropagation()}>
             <div className="drawer__header">
-              <span className="drawer__title">????</span>
+              <span className="drawer__title">角色卡</span>
               <button className="button button--ghost button--sm" onClick={() => setSelectedCharId(null)} type="button">?</button>
             </div>
             <CharacterCardView canEdit={isKeeper} canRoll={Boolean(currentMember) && selectedChar.active !== false}
@@ -710,10 +710,10 @@ function DiceRollView({ roll }: { roll: DiceRollResult }) {
   if (roll.hidden) {
     return (
       <div className="chat-roll-result">
-        <div className="chat-roll-result__dice">??</div>
+        <div className="chat-roll-result__dice">?</div>
         <div>
-          <span className="chat-roll-result__label">??</span>
-          <div className="chat-roll-result__detail">?KP??</div>
+          <span className="chat-roll-result__label">暗骰</span>
+          <div className="chat-roll-result__detail">仅KP可见</div>
         </div>
       </div>
     );
@@ -736,7 +736,7 @@ function DiceRollView({ roll }: { roll: DiceRollResult }) {
           </span>
         )}
         <div className="chat-roll-result__detail">
-          {detail}{roll.targetValue ? ` ? ?? ${roll.targetValue}` : ""}
+          {detail}{roll.targetValue ? `  目标 ${roll.targetValue}` : ""}
         </div>
       </div>
     </div>

@@ -370,7 +370,7 @@ class RoomStore:
             if room["status"] != "preparing":
                 raise ValueError("Room can only be activated from preparing status")
             room["status"] = "active"
-            self._add_system_message(room, f"{editor['displayName']} ??????")
+            self._add_system_message(room, f"{editor['displayName']} 激活了房间，游戏开始！")
             self._save()
             return deepcopy(room)
 
@@ -408,9 +408,9 @@ class RoomStore:
                 "memberCount": len(room.get("members", [])),
                 "characters": [
                     {
-                        "name": c.get("basic", {}).get("name") or c.get("sourceFileName", "??"),
-                        "ownerName": c.get("ownerName", "??"),
-                        "occupation": c.get("basic", {}).get("occupation", "????"),
+                        "name": c.get("basic", {}).get("name") or c.get("sourceFileName", "未知"),
+                        "ownerName": c.get("ownerName", "未知"),
+                        "occupation": c.get("basic", {}).get("occupation", "未知职业"),
                         "status": {
                             attr["key"]: attr["value"]
                             for attr in c.get("attributes", [])
@@ -489,7 +489,7 @@ class RoomStore:
 
             # Record result
             loss_str = f"{success_loss if is_success else failure_loss} → SAN -{loss_amount}"
-            label = f"{character.get('basic', {}).get('name', '??')} SAN CHECK (当前SAN={current_san})"
+            label = f"{character.get('basic', {}).get('name', '未知')} SAN CHECK (当前SAN={current_san})"
             dice_result["label"] = label
             dice_result["hidden"] = hidden
 
@@ -511,7 +511,7 @@ class RoomStore:
             # System message for SAN change
             self._add_system_message(
                 room,
-                f"{character.get('basic', {}).get('name', '??')} SAN CHECK "
+                f"{character.get('basic', {}).get('name', '未知')} SAN CHECK "
                 f"{'成功' if is_success else '失败'}，SAN {current_san} → {new_san} "
                 f"({'-' if loss_amount > 0 else ''}{loss_amount})"
                 + (" [触发临时疯狂检定]" if loss_amount >= 5 else "")
