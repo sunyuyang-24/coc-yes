@@ -70,6 +70,7 @@ export type CharacterCard = {
   basic: Record<string, string>;
   attributes: CharacterAttribute[];
   status: Record<string, number | null>;
+  initialStatus?: Record<string, number | null>;
   skills: CharacterSkill[];
   weapons: Array<Record<string, string | number | null>>;
   background: Record<string, string>;

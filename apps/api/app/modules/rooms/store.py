@@ -170,6 +170,7 @@ class RoomStore:
                 for k, v in label_map.items()
             ],
             "status": {"hp": 10, "san": 50, "mp": 10, "mov": 7, "armor": 0},
+            "initialStatus": {"hp": 10, "san": 50, "mp": 10, "mov": 7, "armor": 0},
             "skills": [
                 {"name": "闪避", "value": 25, "half": 12, "fifth": 5},
             ],

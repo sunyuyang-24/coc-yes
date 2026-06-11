@@ -3,6 +3,7 @@
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CharacterCard, DiceRollResult, RoomDetail } from "@coc-yes/shared";
+import { CharacterCardView } from "@/components/character-card-view";
 import { RulesSearchPanel } from "@/components/rules-search-panel";
 import { VoiceRecorder } from "@/components/voice-recorder";
 import { VoiceMessage } from "@/components/voice-message";
@@ -24,6 +25,7 @@ type SocketEvent = {
 };
 
 const STORAGE_KEY = "coc-yes.current-session";
+const DICE_PREFS_KEY = "coc-yes.dice-prefs";
 
 // ---------------------------------------------------------------------------
 // Dice sound effect (Web Audio API)
@@ -69,7 +71,16 @@ export function RoomConsole() {
   const [draft, setDraft] = useState("");
   const [rollLabel, setRollLabel] = useState("侦查");
   const [expression, setExpression] = useState("1d100");
-  const [targetValue, setTargetValue] = useState("60");
+  const [targetValue, setTargetValue] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(DICE_PREFS_KEY);
+      if (raw) {
+        const prefs = JSON.parse(raw);
+        return String(prefs.targetValue ?? 60);
+      }
+    } catch { /* ignore */ }
+    return "60";
+  });
   const [bonusPenalty, setBonusPenalty] = useState("0");
   const [hiddenRoll, setHiddenRoll] = useState(false);
   const [replyTo, setReplyTo] = useState<{ id: string; senderName: string; content: string } | null>(null);
@@ -77,6 +88,7 @@ export function RoomConsole() {
   const [rollsFilter, setRollsFilter] = useState("");
   const [privateTarget, setPrivateTarget] = useState("");
   const [npcName, setNpcName] = useState("");
+  const [messageSearch, setMessageSearch] = useState("");
   const [characterFile, setCharacterFile] = useState<File | null>(null);
   const [notice, setNotice] = useState("创建或加入房间后，聊天会实时同步。");
   const messageEndRef = useRef<HTMLDivElement | null>(null);
@@ -198,6 +210,7 @@ export function RoomConsole() {
     }
 
     setNotice("正在投掷骰子...");
+    let tv: number | null = targetValue ? Number(targetValue) : null;
 
     await apiRequest(`/api/rooms/${room.id}/rolls`, {
       method: "POST",
@@ -210,6 +223,15 @@ export function RoomConsole() {
         hidden: hiddenRoll
       })
     });
+
+    // Save dice prefs for next time
+    try {
+      window.localStorage.setItem(DICE_PREFS_KEY, JSON.stringify({
+        targetValue: tv ?? 60,
+        expression,
+        bonusPenalty: Number(bonusPenalty),
+      }));
+    } catch { /* ignore */ }
 
     setNotice("投掷完成，结果已写入房间日志。");
   }
@@ -484,8 +506,32 @@ export function RoomConsole() {
           </aside>
 
           <section className="chat-panel">
+            <div className="chat-search-bar">
+              <input
+                className="chat-search-input"
+                placeholder="搜索聊天记录..."
+                value={messageSearch}
+                onChange={(e) => setMessageSearch(e.target.value)}
+              />
+              {messageSearch && (
+                <button className="text-button" onClick={() => setMessageSearch("")} type="button">
+                  清除
+                </button>
+              )}
+            </div>
             <div className="chat-log">
-              {room.messages.map((message) => (
+              {room.messages
+                .filter(m => {
+                  if (!messageSearch) return true;
+                  const q = messageSearch.toLowerCase();
+                  // 搜索消息内容、发送者名、骰子标签
+                  return (
+                    m.content.toLowerCase().includes(q) ||
+                    m.senderName.toLowerCase().includes(q) ||
+                    (m.roll?.label && m.roll.label.toLowerCase().includes(q))
+                  );
+                })
+                .map((message) => (
                 <article className={`chat-message chat-message--${message.type}`} key={message.id}>
                   <div className="chat-message__meta">
                     <strong>{message.senderName}</strong>
@@ -498,6 +544,12 @@ export function RoomConsole() {
                   )}
                 </article>
               ))}
+              {messageSearch && room.messages.filter(m => {
+                const q = messageSearch.toLowerCase();
+                return m.content.toLowerCase().includes(q) || m.senderName.toLowerCase().includes(q) || (m.roll?.label && m.roll.label.toLowerCase().includes(q));
+              }).length === 0 && (
+                <p className="chat-search-empty">没有找到匹配的消息</p>
+              )}
               <div ref={messageEndRef} />
             </div>
 
@@ -623,311 +675,6 @@ function DiceRollView({ roll }: { roll: DiceRollResult }) {
         {roll.targetValue ? ` · 目标 ${roll.targetValue}` : ""}
       </small>
     </div>
-  );
-}
-
-function CharacterCardView({
-  canEdit,
-  canRoll,
-  character,
-  onRoll,
-  onUpdate
-}: {
-  canEdit: boolean;
-  canRoll: boolean;
-  character: CharacterCard;
-  onRoll: (label: string, targetValue: number) => Promise<void>;
-  onUpdate: (
-    characterId: string,
-    basic: Record<string, string>,
-    attributes: Array<{ key: string; value: number | null }>,
-    keeperNotes: string
-  ) => Promise<void>;
-}) {
-  const [skillSearch, setSkillSearch] = useState("");
-  const [showAllSkills, setShowAllSkills] = useState(false);
-  const visibleSkills = (() => {
-    let filtered = skillSearch
-      ? character.skills.filter((s) => s.name.toLowerCase().includes(skillSearch.toLowerCase()))
-      : character.skills.filter((s) => s.value != null);
-    if (!showAllSkills && !skillSearch) filtered = filtered.slice(0, 24);
-    return filtered;
-  })();
-  const name = character.basic.name || character.sourceFileName;
-  const [editing, setEditing] = useState(false);
-  const [basicDraft, setBasicDraft] = useState({
-    name: character.basic.name || "",
-    occupation: character.basic.occupation || "",
-    age: character.basic.age || "",
-    gender: character.basic.gender || ""
-  });
-  const [attributeDrafts, setAttributeDrafts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(character.attributes.map((attribute) => [attribute.key, String(attribute.value ?? "")]))
-  );
-  const [keeperNotes, setKeeperNotes] = useState(character.keeperNotes || "");
-  const [lockedFields, setLockedFields] = useState<string[]>(character.lockedFields ?? []);
-  const [statusDrafts, setStatusDrafts] = useState<Record<string, number | null>>(() => {
-    const s: Record<string, number | null> = {};
-    for (const [k, v] of Object.entries(character.status)) {
-      s[k] = v as number | null;
-    }
-    return s;
-  });
-  const toggleLockedField = (field: string) => {
-    setLockedFields((prev) =>
-      prev.includes(field) ? prev.filter((f) => f !== field) : [...prev, field]
-    );
-  };
-
-  function beginEdit() {
-    setBasicDraft({
-      name: character.basic.name || "",
-      occupation: character.basic.occupation || "",
-      age: character.basic.age || "",
-      gender: character.basic.gender || ""
-    });
-    setAttributeDrafts(
-      Object.fromEntries(character.attributes.map((attribute) => [attribute.key, String(attribute.value ?? "")]))
-    );
-    setKeeperNotes(character.keeperNotes || "");
-    setEditing(true);
-  }
-
-  async function saveEdit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    await onUpdate(
-      character.id,
-      basicDraft,
-      character.attributes.map((attribute) => ({
-        key: attribute.key,
-        value: attributeDrafts[attribute.key] ? Number(attributeDrafts[attribute.key]) : null
-      })),
-      keeperNotes
-    );
-    setEditing(false);
-  }
-
-  return (
-    <article className="character-card">
-      <div className="character-card__header">
-        <div>
-          <p className="panel__kicker">{character.ownerName}</p>
-          <h2>{name}</h2>
-          <p>
-            {character.basic.occupation || "未读取职业"} · {character.basic.age || "年龄未知"}
-          </p>
-        </div>
-        <span>{character.sourceFileName}</span>
-      </div>
-
-      {canEdit ? (
-        <div className="character-actions">
-          <button className="text-button" onClick={beginEdit} type="button">
-            KP 编辑
-          </button>
-        </div>
-      ) : null}
-
-      {editing ? (
-        <form className="character-editor" onSubmit={saveEdit}>
-          <div className="character-editor__grid">
-            <label>??<input value={basicDraft.name} onChange={(event) => setBasicDraft((draft) => ({ ...draft, name: event.target.value }))} /></label>
-            <label>??<input value={basicDraft.occupation} onChange={(event) => setBasicDraft((draft) => ({ ...draft, occupation: event.target.value }))} /></label>
-            <label>??<input value={basicDraft.age} onChange={(event) => setBasicDraft((draft) => ({ ...draft, age: event.target.value }))} /></label>
-            <label>??<input value={basicDraft.gender} onChange={(event) => setBasicDraft((draft) => ({ ...draft, gender: event.target.value }))} /></label>
-          </div>
-          <div className="attribute-editor">
-            {character.attributes.map((attribute) => (
-              <label key={attribute.key}>
-                {attribute.key}
-                <input inputMode="numeric" value={attributeDrafts[attribute.key] ?? ""} onChange={(event) => setAttributeDrafts((draft) => ({ ...draft, [attribute.key]: event.target.value }))} />
-              </label>
-            ))}
-          </div>
-          <div className="character-editor__locked">
-            <p className="character-editor__locked-title">?????????????????</p>
-            <div className="character-editor__locked-grid">
-              {character.attributes.map((attr) => (
-                <label key={attr.key} className="locked-toggle">
-                  <input type="checkbox" checked={lockedFields.includes(attr.key)} onChange={() => toggleLockedField(attr.key)} />
-                  <span>{attr.key}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <label>KP ??<textarea value={keeperNotes} onChange={(event) => setKeeperNotes(event.target.value)} /></label>
-          <div className="character-editor__actions">
-            <button className="button button--primary" type="submit">?????</button>
-            <button className="button button--ghost" onClick={() => setEditing(false)} type="button">??</button>
-          </div>
-        </form>
-      ) : null}
-
-      {character.warnings.length ? (
-        <div className="character-warnings">
-          {character.warnings.map((warning) => (
-            <p key={warning}>{warning}</p>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="attribute-grid">
-        {character.attributes.map((attribute) => (
-          <div key={attribute.key}>
-            <span>{attribute.key}</span>
-            <strong>{attribute.value ?? "?"}</strong>
-            <small>
-              困难 {attribute.half ?? "?"} · 极难 {attribute.fifth ?? "?"}
-            </small>
-            <small>
-              困难 {attribute.half ?? "?"} · 极难 {attribute.fifth ?? "?"}
-            </small>
-            {canRoll && attribute.value ? (
-              <button
-                className="inline-roll"
-                onClick={() => onRoll(`${name} · ${attribute.label}`, attribute.value ?? 0)}
-                type="button"
-              >
-                投掷
-              </button>
-            ) : null}
-          </div>
-        ))}
-      </div>
-
-      {Object.keys(character.status).length > 0 && (() => {
-        const strAttr = character.attributes.find(a => a.key === "STR");
-        const conAttr = character.attributes.find(a => a.key === "CON");
-        const sizAttr = character.attributes.find(a => a.key === "SIZ");
-        const powAttr = character.attributes.find(a => a.key === "POW");
-        const strVal = strAttr?.value ?? 0;
-        const conVal = conAttr?.value ?? 0;
-        const sizVal = sizAttr?.value ?? 0;
-        const powVal = powAttr?.value ?? 0;
-        const maxVals: Record<string, number | null> = {
-          hp: conVal > 0 && sizVal > 0 ? Math.floor((conVal + sizVal) / 10) : null,
-          san: powVal > 0 ? powVal : null,
-          mp: powVal > 0 ? Math.floor(powVal / 5) : null,
-        };
-        return (
-          <div className="status-panel">
-            {Object.entries(character.status).map(([key, val]) => {
-              if (val == null) return null;
-              const labels: Record<string, string> = {
-                hp: "HP", san: "SAN", mp: "MP", mov: "MOV",
-                db: "伤害加值", build: "体格", armor: "护甲"
-              };
-              const maxVal = maxVals[key];
-              const pct = maxVal && typeof val === "number" ? Math.round((val / maxVal) * 100) : null;
-              const barColor = key === "hp" ? (pct != null && pct <= 25 ? "var(--danger)" : "var(--accent)")
-                : key === "san" ? "#7c6ff7"
-                : key === "mp" ? "#4fc3f7"
-                : null;
-              return (
-                <div key={key} className="status-chip">
-                  <span className="status-chip__label">{labels[key] || key.toUpperCase()}</span>
-                  <span className="status-chip__value">
-                    {val}{maxVal != null ? " / " + maxVal : ""}
-                  </span>
-                  {barColor && pct != null && (
-                    <div className="status-chip__bar">
-                      <div className="status-chip__bar-fill" style={{ width: Math.min(pct, 100) + "%", background: barColor }} />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        );
-      })()}
-
-      <div className="character-card__split">
-        <div>
-          <h3>技能预览</h3>
-          <div className="skill-search-wrap">
-            <input
-              className="skill-search-input"
-              placeholder="????..."
-              value={skillSearch}
-              onChange={(e) => setSkillSearch(e.target.value)}
-            />
-          </div>
-          <div className="skill-list">
-            {visibleSkills.map((skill) => (
-              <button
-                disabled={!canRoll || !skill.value}
-                key={`${skill.name}-${skill.value}`}
-                onClick={() => skill.value && onRoll(`${name} · ${skill.name}`, skill.value)}
-                type="button"
-              >
-                {skill.name} {skill.value ?? "?"}
-              </button>
-            ))}
-          </div>
-          {!skillSearch && !showAllSkills && character.skills.filter((s) => s.value != null).length > 24 && (
-            <button className="text-button" onClick={() => setShowAllSkills(true)} type="button">
-              ??????
-            </button>
-          )}
-        </div>
-        <div>
-          <h3>背景</h3>
-          <div className="bg-detail">
-            {Object.entries(character.background).filter(([,v]) => v).map(([k, v]) => (
-              <div key={k} className="bg-item">
-                <span className="bg-item__label">{
-  ({"appearance":"外貌描述","beliefs":"思想与信念","significantPeople":"重要之人","significantLocations":"意义非凡之地","treasuredPossessions":"宝贵之物","traits":"特质","injuriesScars":"伤口和瘤痕","phobiasManias":"恐惧症和躁狂症","name":"姓名","player":"玩家","occupation":"职业","age":"年龄","gender":"性别","era":"时代","residence":"住地","birthplace":"故乡"} as Record<string,string>)[k] || k
-}</span>
-                <span className="bg-item__value">{v}</span>
-              </div>
-            ))}
-            {Object.values(character.background).every(v => !v) && <p className="muted">暂未读取到背景文本</p>}
-          </div>
-
-          {character.weapons && character.weapons.length > 0 && (
-            <><h3>武器</h3>
-            <div className="weapon-list">
-              {character.weapons.map((w, i) => (
-                <div key={i} className="weapon-row">
-                  <span className="weapon-row__name">{w.name || "武器"}</span>
-                  <span className="weapon-row__dmg">{w.damage || "??"}</span>
-                  {canRoll && w.skill && (
-                    <button className="inline-roll" onClick={() => {
-                      const sn = String(w.skill || "");
-                      const sk = character.skills.find(s => s.name === sn);
-                      if (sk?.value) onRoll(name + " · " + sn, sk.value);
-                    }} type="button">投掷</button>
-                  )}
-                </div>
-              ))}
-            </div></>
-          )}
-
-          {character.spells && character.spells.length > 0 && (
-            <><h3>法术</h3>
-            <div className="bg-detail">
-              {character.spells.map((s, i) => (
-                <div key={i} className="bg-item">
-                  <span className="bg-item__label">{s.name || "法术"}</span>
-                  <span className="bg-item__value">{s.cost || ""}</span>
-                </div>
-              ))}
-            </div></>
-          )}
-
-          {character.experiences && character.experiences.length > 0 && (
-            <details className="character-history">
-              <summary>调查员经历</summary>
-              {character.experiences.map((exp, i) => (
-                <p key={i} className="muted">{typeof exp === "string" ? exp : exp.text || JSON.stringify(exp)}</p>
-              ))}
-            </details>
-          )}
-          {character.keeperNotes ? <p className="keeper-notes">KP 备注：{character.keeperNotes}</p> : null}
-        </div>
-      </div>
-    </article>
   );
 }
 

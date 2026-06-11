@@ -2073,3 +2073,40 @@ select:focus {
 .roll-card__search-btn:hover {
   background: rgba(213, 255, 119, 0.2);
 }
+
+/* ------------------------------------------------------------------ */
+/* Chat search
+/* ------------------------------------------------------------------ */
+
+.chat-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.chat-search-input {
+  flex: 1;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 1.2rem;
+  font-family: inherit;
+}
+
+.chat-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.chat-search-empty {
+  text-align: center;
+  padding: 20px;
+  color: var(--muted);
+  font-size: 1.2rem;
+}

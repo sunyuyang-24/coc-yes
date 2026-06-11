@@ -84,11 +84,15 @@ def parse_character_card(content: bytes, filename: str) -> dict:
     if status.get("build") is None and computed_build is not None:
         status["build"] = computed_build
 
+    # Capture initial status as snapshot for current/max comparison
+    initial_status = {k: v for k, v in status.items() if v is not None}
+
     return {
         "sourceFileName": filename,
         "basic": _parse_basic(cells),
         "attributes": attributes,
         "status": status,
+        "initialStatus": initial_status,
         "skills": _parse_skills(cells),
         "weapons": _parse_weapons(cells),
         "background": _parse_background(cells),

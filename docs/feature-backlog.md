@@ -93,9 +93,9 @@
 
 | 功能 | 来源 | 说明 |
 |------|------|------|
-| 私聊 | product-requirements.md 3.2 | 玩家间一对一私聊 |
-| 消息搜索 | product-requirements.md 3.2 | 搜索聊天历史 |
-| @提及 | Agent 审查 (调查员) #13 | 输入 @ 弹出成员列表，高亮提及 |
+| 私聊 | product-requirements.md 3.2 | 待实现 | 玩家间一对一私聊 |
+| 消息搜索 | product-requirements.md 3.2 | **已完成** | 聊天面板顶部搜索框 |
+| @提及 | Agent 审查 (调查员) #13 | 待实现 | 输入 @ 弹出成员列表，高亮提及 |
 
 ## 七、房间/权限增强
 
@@ -111,19 +111,19 @@
 
 | 功能 | 来源 | 说明 |
 |------|------|------|
-| 多角色卡支持 | Agent 审查 (调查员) #8 | 一个玩家多张，可切换 |
-| 当前值/初始值分离 | Agent 审查 (调查员) #4 | SAN/HP 区分初始和当前，追踪变化历史 |
-| 多模板支持 | product-requirements.md 4 | 支持多种 COC 角色卡模板 |
-| 角色卡更新请求 | product-requirements.md 3.5 | 玩家提交修改请求，KP 审批 |
-| 技能分类展示 | Agent 审查 (调查员) #7 | 战斗/社交/知识分组排序 |
-| HP/SAN 进度条 | Agent 审查 (调查员) #3.8 | 当前值/最大值可视化比例 |
+| 多角色卡支持 | Agent 审查 (调查员) #8 | 待实现 | 一个玩家多张，可切换 |
+| 当前值/初始值分离 | Agent 审查 (调查员) #4 | **已完成** | CharacterCard.initialStatus 字段，进度条用初始值做分母 |
+| 多模板支持 | product-requirements.md 4 | 待实现 | 支持多种 COC 角色卡模板 |
+| 角色卡更新请求 | product-requirements.md 3.5 | 待实现 | 玩家提交修改请求，KP 审批 |
+| 技能分类展示 | Agent 审查 (调查员) #7 | 待实现 | 战斗/社交/知识分组排序 |
+| HP/SAN 进度条 | Agent 审查 (调查员) #3.8 | **已完成** | status chip 底部彩色进度条 |
 
 ## 九、投掷体验增强
 
 | 功能 | 来源 | 状态 | 说明 |
 |------|------|------|------|
 | 投掷与规则搜索关联 | Agent 审查 (调查员) #3.4 | **已完成** | 投掷结果旁"查规则"按钮，自动填入标签搜索 |
-| 记住上次投掷参数 | Agent 审查 (调查员) #5.2 | 待实现 | targetValue 记住上次输入值 |
+| 记住上次投掷参数 | Agent 审查 (调查员) #5.2 | **已完成** | 投掷参数持久化到 localStorage |
 | 快捷投掷支持奖励骰 | Agent 审查 (调查员) #6 | 待实现 | 传递 bonusPenalty 参数 |
 
 ## 十、UI/UX 增强
@@ -134,7 +134,7 @@
 | PWA 支持 | architecture.md | 离线可用、桌面安装 |
 | 房间级主题 | product-requirements.md 3.8 | KP 设置房间主题，同步给所有玩家 |
 | 总结导出 | mvp-roadmap.md 阶段10 | 导出为 Markdown/PDF |
-| room-console 拆分 | Agent 审查 (KP) #18 | 816 行单组件拆为多个子组件 |
+| room-console 拆分 | Agent 审查 (KP) #18 | **已完成** | CharacterCardView 拆出为独立组件 |
 
 ## 十一、后端架构升级
 
