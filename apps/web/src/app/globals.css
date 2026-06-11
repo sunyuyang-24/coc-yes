@@ -907,6 +907,124 @@ select:focus {
 }
 
 
+
+/* ------------------------------------------------------------------ */
+/* Status Panel (HP/SAN/MP on character card)
+/* ------------------------------------------------------------------ */
+
+.status-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.status-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 6px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 60px;
+}
+
+.status-chip__label {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+}
+
+.status-chip__value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+/* ------------------------------------------------------------------ */
+/* Composer textarea
+/* ------------------------------------------------------------------ */
+
+.composer textarea {
+  flex: 1;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 1.4rem;
+  font-family: var(--font-body);
+  resize: none;
+  min-height: 42px;
+  max-height: 120px;
+  line-height: 1.5;
+}
+
+.composer textarea::placeholder {
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 1.3rem;
+}
+
+.composer textarea:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* ------------------------------------------------------------------ */
+/* Copy button for invite code
+/* ------------------------------------------------------------------ */
+
+.copy-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.1rem;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-family: var(--font-body);
+}
+
+.copy-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* ------------------------------------------------------------------ */
+/* Skill search
+/* ------------------------------------------------------------------ */
+
+.skill-search-wrap {
+  margin-bottom: 8px;
+}
+
+.skill-search-input {
+  width: 100%;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  font-family: var(--font-body);
+}
+
+.skill-search-input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ------------------------------------------------------------------ */
+/* Roll card color border
+/* ------------------------------------------------------------------ */
+
+.roll-card {
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+  transition: border-color 0.2s;
+}
+
 /* ------------------------------------------------------------------ */
 /* Voice Recorder & Message
 /* ------------------------------------------------------------------ */

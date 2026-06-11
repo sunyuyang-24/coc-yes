@@ -167,7 +167,8 @@ export function RoomConsole() {
         expression,
         label: rollLabel || null,
         targetValue: targetValue ? Number(targetValue) : null,
-        bonusPenalty: Number(bonusPenalty)
+        bonusPenalty: Number(bonusPenalty),
+        hidden: hiddenRoll
       })
     });
 
@@ -522,7 +523,15 @@ function CharacterCardView({
     keeperNotes: string
   ) => Promise<void>;
 }) {
-  const visibleSkills = character.skills.slice(0, 12);
+  const [skillSearch, setSkillSearch] = useState("");
+  const [showAllSkills, setShowAllSkills] = useState(false);
+  const visibleSkills = (() => {
+    let filtered = skillSearch
+      ? character.skills.filter((s) => s.name.toLowerCase().includes(skillSearch.toLowerCase()))
+      : character.skills.filter((s) => s.value != null);
+    if (!showAllSkills && !skillSearch) filtered = filtered.slice(0, 12);
+    return filtered;
+  })();
   const name = character.basic.name || character.sourceFileName;
   const [editing, setEditing] = useState(false);
   const [basicDraft, setBasicDraft] = useState({
@@ -535,6 +544,12 @@ function CharacterCardView({
     Object.fromEntries(character.attributes.map((attribute) => [attribute.key, String(attribute.value ?? "")]))
   );
   const [keeperNotes, setKeeperNotes] = useState(character.keeperNotes || "");
+  const [lockedFields, setLockedFields] = useState<string[]>(character.lockedFields ?? []);
+  const toggleLockedField = (field: string) => {
+    setLockedFields((prev) =>
+      prev.includes(field) ? prev.filter((f) => f !== field) : [...prev, field]
+    );
+  };
 
   function beginEdit() {
     setBasicDraft({
@@ -589,60 +604,34 @@ function CharacterCardView({
       {editing ? (
         <form className="character-editor" onSubmit={saveEdit}>
           <div className="character-editor__grid">
-            <label>
-              姓名
-              <input
-                value={basicDraft.name}
-                onChange={(event) => setBasicDraft((draft) => ({ ...draft, name: event.target.value }))}
-              />
-            </label>
-            <label>
-              职业
-              <input
-                value={basicDraft.occupation}
-                onChange={(event) => setBasicDraft((draft) => ({ ...draft, occupation: event.target.value }))}
-              />
-            </label>
-            <label>
-              年龄
-              <input
-                value={basicDraft.age}
-                onChange={(event) => setBasicDraft((draft) => ({ ...draft, age: event.target.value }))}
-              />
-            </label>
-            <label>
-              性别
-              <input
-                value={basicDraft.gender}
-                onChange={(event) => setBasicDraft((draft) => ({ ...draft, gender: event.target.value }))}
-              />
-            </label>
+            <label>??<input value={basicDraft.name} onChange={(event) => setBasicDraft((draft) => ({ ...draft, name: event.target.value }))} /></label>
+            <label>??<input value={basicDraft.occupation} onChange={(event) => setBasicDraft((draft) => ({ ...draft, occupation: event.target.value }))} /></label>
+            <label>??<input value={basicDraft.age} onChange={(event) => setBasicDraft((draft) => ({ ...draft, age: event.target.value }))} /></label>
+            <label>??<input value={basicDraft.gender} onChange={(event) => setBasicDraft((draft) => ({ ...draft, gender: event.target.value }))} /></label>
           </div>
           <div className="attribute-editor">
             {character.attributes.map((attribute) => (
               <label key={attribute.key}>
                 {attribute.key}
-                <input
-                  inputMode="numeric"
-                  value={attributeDrafts[attribute.key] ?? ""}
-                  onChange={(event) =>
-                    setAttributeDrafts((draft) => ({ ...draft, [attribute.key]: event.target.value }))
-                  }
-                />
+                <input inputMode="numeric" value={attributeDrafts[attribute.key] ?? ""} onChange={(event) => setAttributeDrafts((draft) => ({ ...draft, [attribute.key]: event.target.value }))} />
               </label>
             ))}
           </div>
-          <label>
-            KP 备注
-            <textarea value={keeperNotes} onChange={(event) => setKeeperNotes(event.target.value)} />
-          </label>
+          <div className="character-editor__locked">
+            <p className="character-editor__locked-title">?????????????????</p>
+            <div className="character-editor__locked-grid">
+              {character.attributes.map((attr) => (
+                <label key={attr.key} className="locked-toggle">
+                  <input type="checkbox" checked={lockedFields.includes(attr.key)} onChange={() => toggleLockedField(attr.key)} />
+                  <span>{attr.key}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <label>KP ??<textarea value={keeperNotes} onChange={(event) => setKeeperNotes(event.target.value)} /></label>
           <div className="character-editor__actions">
-            <button className="button button--primary" type="submit">
-              保存角色卡
-            </button>
-            <button className="button button--ghost" onClick={() => setEditing(false)} type="button">
-              取消
-            </button>
+            <button className="button button--primary" type="submit">?????</button>
+            <button className="button button--ghost" onClick={() => setEditing(false)} type="button">??</button>
           </div>
         </form>
       ) : null}
@@ -676,9 +665,35 @@ function CharacterCardView({
         ))}
       </div>
 
+      {Object.keys(character.status).length > 0 && (
+        <div className="status-panel">
+          {Object.entries(character.status).map(([key, val]) => {
+            if (val == null) return null;
+            const labels: Record<string, string> = {
+              hp: "HP", san: "SAN", mp: "MP", mov: "MOV",
+              db: "????", build: "??", armor: "??"
+            };
+            return (
+              <div key={key} className="status-chip">
+                <span className="status-chip__label">{labels[key] || key.toUpperCase()}</span>
+                <span className="status-chip__value">{val}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <div className="character-card__split">
         <div>
           <h3>技能预览</h3>
+          <div className="skill-search-wrap">
+            <input
+              className="skill-search-input"
+              placeholder="????..."
+              value={skillSearch}
+              onChange={(e) => setSkillSearch(e.target.value)}
+            />
+          </div>
           <div className="skill-list">
             {visibleSkills.map((skill) => (
               <button
@@ -691,6 +706,11 @@ function CharacterCardView({
               </button>
             ))}
           </div>
+          {!skillSearch && !showAllSkills && character.skills.filter((s) => s.value != null).length > 12 && (
+            <button className="text-button" onClick={() => setShowAllSkills(true)} type="button">
+              ??????
+            </button>
+          )}
         </div>
         <div>
           <h3>背景摘要</h3>

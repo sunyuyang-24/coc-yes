@@ -76,7 +76,9 @@ def _roll_coc_d100(bonus_penalty: int) -> tuple[int, list[dict]]:
 
     total = chosen_tens * 10 + ones
 
-    if total == 0:
+    # Clamp 0 to 100 for d100 (00 = 100), but only for non-bonus contexts
+    # bonus dice with all-zero tens + ones=0 should yield 0 (critical), not 100
+    if total == 0 and bonus_penalty <= 0:
         total = 100
 
     return total, [
@@ -101,12 +103,12 @@ def _classify_coc_success(total: int, target_value: int | None) -> dict:
             "isSuccess": None,
         }
 
-    fumble_threshold = 100 if target_value >= 50 else 96
-
     if total == 1:
         return {"level": "critical", "label": "大成功", "isSuccess": True}
 
-    if total >= fumble_threshold:
+    # COC 7e: skill>=50 fumble 96-100, skill<50 fumble 97-100
+    fumble_low = 96 if target_value >= 50 else 97
+    if total >= fumble_low:
         return {"level": "fumble", "label": "大失败", "isSuccess": False}
 
     if total <= target_value // 5:

@@ -159,7 +159,7 @@ export function SummaryPanel({ room, memberId, isKeeper }: Props) {
         </div>
       )}
 
-      {!isKeeper && draft && (
+      {!isKeeper && summary.draft && (
         <div className="summary-panel__draft">
           <h4>KP 总结</h4>
           <p>{draft}</p>

@@ -115,6 +115,31 @@ class RoomStore:
 
             return deepcopy(roll_record)
 
+    def create_npc(self, room_id: str, keeper_id: str, name: str) -> dict:
+        character = {
+            "basic": {"name": name, "occupation": "NPC"},
+            "attributes": [
+                {"key": "STR", "label": "??", "value": 50, "half": 25, "fifth": 10},
+                {"key": "DEX", "label": "??", "value": 50, "half": 25, "fifth": 10},
+                {"key": "POW", "label": "??", "value": 50, "half": 25, "fifth": 10},
+                {"key": "CON", "label": "??", "value": 50, "half": 25, "fifth": 10},
+                {"key": "APP", "label": "??", "value": 50, "half": 25, "fifth": 10},
+                {"key": "EDU", "label": "??", "value": 50, "half": 25, "fifth": 10},
+                {"key": "SIZ", "label": "??", "value": 50, "half": 25, "fifth": 10},
+                {"key": "INT", "label": "??", "value": 50, "half": 25, "fifth": 10},
+                {"key": "LUCK", "label": "??", "value": 50, "half": 25, "fifth": 10},
+            ],
+            "status": {"hp": 10, "san": 50, "mp": 10, "mov": 7, "armor": 0},
+            "skills": [
+                {"name": "??(??)", "value": 50, "half": 25, "fifth": 10},
+                {"name": "??", "value": 25, "half": 12, "fifth": 5},
+            ],
+            "weapons": [{"name": "??", "damage": "1d3", "skill": "??(??)"}],
+            "background": {}, "experiences": [], "spells": [],
+            "warnings": [], "sourceFileName": "npc",
+        }
+        return self.add_character(room_id, keeper_id, character)
+
     def add_character(self, room_id: str, owner_id: str, character: dict) -> dict:
         with self._lock:
             room = self._require_room(room_id)
@@ -276,6 +301,19 @@ class RoomStore:
 
             if code not in existing:
                 return code
+
+    def activate_room(self, room_id: str, editor_id: str) -> dict:
+        with self._lock:
+            room = self._require_room(room_id)
+            editor = self._find_member(room, editor_id)
+            if editor["role"] != "keeper":
+                raise PermissionError("Only keeper can activate the room")
+            if room["status"] != "preparing":
+                raise ValueError("Room can only be activated from preparing status")
+            room["status"] = "active"
+            self._add_system_message(room, f"{editor['displayName']} ??????")
+            self._save()
+            return deepcopy(room)
 
     def end_room(self, room_id: str, editor_id: str) -> dict:
         """Mark room as ended and return summary data."""

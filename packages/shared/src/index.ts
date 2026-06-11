@@ -75,6 +75,8 @@ export type CharacterCard = {
   spells: Array<Record<string, string>>;
   warnings: string[];
   keeperNotes: string;
+  lockedFields?: string[];
+  history?: Array<{ editorId: string; editorName: string; timestamp: string; changes: Record<string, unknown>; }>;
   createdAt: string;
   updatedAt: string;
 };
