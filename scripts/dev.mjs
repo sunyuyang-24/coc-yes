@@ -30,7 +30,7 @@ function startProcess(name, command, args, cwd) {
   const child = spawn(command, args, {
     cwd: cwd ?? ROOT,
     stdio: "pipe",
-    shell: true,
+    shell: false,
   });
 
   child.stdout.on("data", (d) => process.stdout.write(`${tag(name)} ${d}`));
@@ -70,7 +70,7 @@ log("system", "═════════════════════�
 
 const children = [
   startProcess("api", python, ["-m", "uvicorn", "app.main:app", "--reload", "--host", process.env.API_HOST || "127.0.0.1", "--port", process.env.API_PORT || "8000"], apiDir),
-  startProcess("web", npm, ["--workspace", "apps/web", "run", "dev", "--", "--hostname", "127.0.0.1", "--port", "3001"], ROOT),
+  startProcess("web", "cmd.exe", ["/c", "npm.cmd", "--workspace", "apps/web", "run", "dev", "--", "--hostname", "127.0.0.1", "--port", "3001"], ROOT),
 ];
 
 function shutdown() {
