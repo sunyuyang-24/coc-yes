@@ -37,6 +37,7 @@ export function RoomConsole() {
   const [expression, setExpression] = useState("1d100");
   const [targetValue, setTargetValue] = useState("60");
   const [bonusPenalty, setBonusPenalty] = useState("0");
+  const [hiddenRoll, setHiddenRoll] = useState(false);
   const [characterFile, setCharacterFile] = useState<File | null>(null);
   const [notice, setNotice] = useState("创建或加入房间后，聊天会实时同步。");
   const messageEndRef = useRef<HTMLDivElement | null>(null);
@@ -467,6 +468,14 @@ export function RoomConsole() {
 }
 
 function DiceRollView({ roll }: { roll: DiceRollResult }) {
+  if (roll.hidden) {
+    return (
+      <div className="dice-roll dice-roll--hidden">
+        <p className="dice-roll__expression">[??] ????</p>
+      </div>
+    );
+  }
+
   const detail = roll.breakdown
     .map((item) => {
       if (item.kind === "coc_d100" && item.tensRolls) {

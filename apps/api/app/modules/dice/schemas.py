@@ -9,3 +9,4 @@ class RollDiceRequest(BaseModel):
     label: str | None = Field(default=None, max_length=80)
     target_value: int | None = Field(default=None, alias="targetValue", ge=1, le=999)
     bonus_penalty: int = Field(default=0, alias="bonusPenalty", ge=-2, le=2)
+    hidden: bool = Field(default=False)

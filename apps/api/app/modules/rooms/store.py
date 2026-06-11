@@ -180,6 +180,19 @@ class RoomStore:
             if "keeperNotes" in updates:
                 character["keeperNotes"] = updates.get("keeperNotes") or ""
 
+            if "lockedFields" in updates:
+                character.setdefault("lockedFields", []).clear()
+                character["lockedFields"].extend(updates.get("lockedFields") or [])
+
+            # Record change history
+            change = {
+                "editorId": editor_id,
+                "editorName": editor["displayName"],
+                "timestamp": self._now(),
+                "changes": {k: v for k, v in updates.items() if v is not None},
+            }
+            character.setdefault("history", []).append(change)
+
             character["updatedAt"] = self._now()
             display_name = character.get("basic", {}).get("name") or character["sourceFileName"]
             self._add_system_message(room, f"{editor['displayName']} 更新了角色卡「{display_name}」。")
@@ -349,7 +362,11 @@ class RoomStore:
         return datetime.now(timezone.utc).isoformat()
 
     def _format_roll_message(self, roll: dict) -> str:
+        if roll.get("hidden"):
+            return f"[暗骰] {roll['rollerName']} 进行了一次暗骰"
         label = f"「{roll['label']}」" if roll.get("label") else roll["expression"]
+        if roll.get("hidden"):
+            return f"[暗骰] {roll['rollerName']} {label}"
         result = f"{label} 投掷结果 {roll['total']}"
 
         if roll.get("successLabel"):

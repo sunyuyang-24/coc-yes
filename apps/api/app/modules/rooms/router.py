@@ -68,6 +68,7 @@ async def roll_in_room(room_id: str, payload: RollDiceRequest) -> dict:
             target_value=payload.target_value,
             bonus_penalty=payload.bonus_penalty,
             label=payload.label,
+            hidden=payload.hidden,
         )
         roll_record = store.add_dice_roll(room_id, payload.roller_id, roll)
         room = store.get_room(room_id)
@@ -109,6 +110,7 @@ async def update_character(room_id: str, character_id: str, payload: UpdateChara
                 "basic": payload.basic,
                 "attributes": [item.model_dump() for item in payload.attributes] if payload.attributes else None,
                 "keeperNotes": payload.keeper_notes,
+                "lockedFields": payload.locked_fields,
             },
         )
         room = store.get_room(room_id)

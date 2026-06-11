@@ -1078,6 +1078,99 @@ select:focus {
 
 
 /* ------------------------------------------------------------------ */
+/* Hidden dice & locked fields
+/* ------------------------------------------------------------------ */
+
+.dice-panel__hidden {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.3rem;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+}
+
+.dice-panel__hidden input {
+  accent-color: #e53e3e;
+}
+
+.dice-roll--hidden {
+  opacity: 0.7;
+  font-style: italic;
+}
+
+.character-editor__locked {
+  margin-top: 12px;
+}
+
+.character-editor__locked-title {
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0 0 8px;
+}
+
+.character-editor__locked-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.locked-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+}
+
+.locked-toggle input {
+  accent-color: #e53e3e;
+}
+
+.locked-fields-badge {
+  font-size: 1.1rem;
+  color: #e53e3e;
+  background: rgba(229, 62, 62, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-top: 4px;
+}
+
+.character-history {
+  margin-top: 12px;
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.character-history summary {
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.character-history ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.character-history li {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.character-history__editor {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.character-history__time {
+  font-family: var(--font-mono);
+}
+
+/* ------------------------------------------------------------------ */
 /* Summary Panel
 /* ------------------------------------------------------------------ */
 

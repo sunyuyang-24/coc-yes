@@ -40,6 +40,7 @@ export type DiceRollResult = {
   successLevel: "critical" | "extreme" | "hard" | "regular" | "failure" | "fumble" | null;
   successLabel: string | null;
   isSuccess: boolean | null;
+  hidden: boolean;
   createdAt: string;
 };
 

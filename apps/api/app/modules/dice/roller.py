@@ -8,7 +8,7 @@ _EXPRESSION_RE = re.compile(r"^\s*(?P<count>\d*)d(?P<sides>\d+)\s*(?P<modifier>[
 _RNG = secrets.SystemRandom()
 
 
-def roll_dice(expression: str, target_value: int | None = None, bonus_penalty: int = 0, label: str | None = None) -> dict:
+def roll_dice(expression: str, target_value: int | None = None, bonus_penalty: int = 0, label: str | None = None, hidden: bool = False) -> dict:
     count, sides, modifier = _parse_expression(expression)
     normalized = f"{count}d{sides}{_format_modifier(modifier)}"
 
@@ -38,7 +38,8 @@ def roll_dice(expression: str, target_value: int | None = None, bonus_penalty: i
         "bonusPenalty": bonus_penalty,
         "successLevel": success["level"] if success else None,
         "successLabel": success["label"] if success else None,
-        "isSuccess": success["isSuccess"] if success else None,
+        
+        "hidden": hidden,
     }
 
 

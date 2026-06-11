@@ -13,3 +13,4 @@ class UpdateCharacterRequest(BaseModel):
     basic: dict[str, str] | None = None
     attributes: list[CharacterAttributeUpdate] | None = None
     keeper_notes: str | None = Field(default=None, alias="keeperNotes", max_length=3000)
+    locked_fields: list[str] | None = Field(default=None, alias="lockedFields")
