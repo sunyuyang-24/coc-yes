@@ -13,7 +13,11 @@ class RateLimiter:
         self._buckets: dict[str, list[float]] = defaultdict(list)
 
     async def __call__(self, request: Request) -> None:
-        ip = request.client.host if request.client else "unknown"
+        # Use X-Forwarded-For behind reverse proxy, fall back to direct client IP
+        forwarded = request.headers.get("X-Forwarded-For")
+        ip = forwarded.split(",")[0].strip() if forwarded else (
+            request.client.host if request.client else "unknown"
+        )
         now = time.time()
         window = now - 60
 
