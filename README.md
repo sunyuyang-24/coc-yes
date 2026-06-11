@@ -1,4 +1,4 @@
-# COC Yes
+﻿# COC Yes
 
 在线 COC 跑团助手。项目目标是把房间、聊天、录音、角色卡、骰子、KP 管理和规则书检索整合成一个可持续扩展的跑团工作台。
 
@@ -19,39 +19,40 @@
 
 ## 本地启动
 
-先安装依赖：
+### 方式一：一键启动（推荐）
+
+双击项目根目录的 `start.bat`，脚本会自动完成：
+1. 检查 Node.js 和 Python 环境
+2. 自动生成 `.env` 配置文件
+3. 自动安装缺失的依赖（Node 和 Python）
+4. 同时启动前后端服务
 
 ```powershell
-npm.cmd install
-& .\apps\api\.venv\Scripts\python.exe -m pip install -r .\apps\api\requirements.txt
+.\start.bat
 ```
 
-如果还没有后端虚拟环境，先创建：
+### 方式二：命令行启动
 
 ```powershell
-& 'C:\Users\27164\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m venv .\apps\api\.venv
+# 1. 安装依赖（首次运行）
+npm install
+python -m venv apps\api\.venv
+apps\api\.venv\Scripts\python.exe -m pip install -r apps\api\requirements.txt
+
+# 2. 生成配置文件（首次运行会自动创建，也可手动复制）
+copy .env.example apps\api\.env
+copy .env.example apps\web\.env.local
+
+# 3. 启动
+npm run dev
 ```
 
-启动开发环境：
+启动后访问：
 
-```powershell
-npm.cmd run dev
-```
+- 前端页面：http://localhost:3000
+- 后端 API：http://127.0.0.1:8000/api/health
+- API 文档：http://127.0.0.1:8000/docs
 
-默认地址：
-
-- 前端：http://127.0.0.1:3000
-- 后端：http://127.0.0.1:8000/api/health
-
-阶段 1 可用接口：
-
-- `POST /api/rooms`：创建房间。
-- `POST /api/rooms/join`：使用邀请码加入房间。
-- `GET /api/rooms/{room_id}`：获取房间、成员和历史消息。
-- `POST /api/rooms/{room_id}/messages`：发送文字消息。
-- `POST /api/rooms/{room_id}/rolls`：后端生成骰子结果并写入房间消息。
-- `POST /api/rooms/{room_id}/characters/upload`：上传并解析 Excel 角色卡。
-- `WS /api/rooms/{room_id}/ws?member_id=...`：订阅房间实时更新。
 
 ## 重要约定
 
