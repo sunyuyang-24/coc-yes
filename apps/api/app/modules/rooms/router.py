@@ -31,7 +31,7 @@ async def create_room(payload: CreateRoomRequest) -> dict:
 @router.post("/rooms/join")
 async def join_room(payload: JoinRoomRequest) -> dict:
     try:
-        room, member_id = store.join_room(payload.invite_code, payload.display_name, payload.password)
+        room, member_id = store.join_room(payload.invite_code, payload.display_name, payload.password, payload.role or "player")
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Invite code not found") from error
     except PermissionError as error:

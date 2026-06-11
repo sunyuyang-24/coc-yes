@@ -68,6 +68,7 @@ export function RoomConsole() {
   const [keeperName, setKeeperName] = useState("KP");
   const [roomPassword, setRoomPassword] = useState("");
   const [joinPassword, setJoinPassword] = useState("");
+  const [joinAsSpectator, setJoinAsSpectator] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   const [playerName, setPlayerName] = useState("调查员");
   const [draft, setDraft] = useState("");
@@ -187,7 +188,8 @@ export function RoomConsole() {
       body: JSON.stringify({
         inviteCode,
         displayName: playerName,
-        password: joinPassword || undefined
+        password: joinPassword || undefined,
+        role: joinAsSpectator ? "spectator" : "player"
       })
     });
 
@@ -400,6 +402,10 @@ export function RoomConsole() {
             房间密码 <small>（如房间设有密码）</small>
             <input value={joinPassword} onChange={(e) => setJoinPassword(e.target.value)} placeholder="如无密码可留空" />
           </label>
+          <label className="spectator-toggle">
+            <input type="checkbox" checked={joinAsSpectator} onChange={(e) => setJoinAsSpectator(e.target.checked)} />
+            以旁观者身份加入（只读，不可投掷和发言）
+          </label>
           <button className="button button--ghost" type="submit">
             加入房间
           </button>
@@ -453,12 +459,16 @@ export function RoomConsole() {
                   <span className={member.online ? "presence presence--online" : "presence"} />
                   <div>
                     <strong>{member.displayName}</strong>
-                    <small>{member.role === "keeper" ? "KP" : "玩家"}{(room?.characters || []).find((c) => c.ownerId === member.id) ? " · " + ((room?.characters || []).find((c) => c.ownerId === member.id)?.basic?.name || "角色") : ""}</small>
+                    <small>
+                      {member.role === "keeper" ? "KP" : member.role === "spectator" ? "旁观" : "玩家"}
+                      {(room?.characters || []).find((c) => c.ownerId === member.id) ? " · " + ((room?.characters || []).find((c) => c.ownerId === member.id)?.basic?.name || "角色") : ""}
+                    </small>
                   </div>
                 </div>
               ))}
             </div>
 
+            {currentMember?.role !== "spectator" && (
             <form className="dice-panel" onSubmit={rollDice}>
               <p className="panel__kicker">Dice</p>
               <h3>可信投掷</h3>
@@ -533,6 +543,7 @@ export function RoomConsole() {
             )}
             </form>
 
+            )}
             <form className="upload-panel" onSubmit={uploadCharacter}>
               <p className="panel__kicker">Character</p>
               <h3>上传角色卡</h3>

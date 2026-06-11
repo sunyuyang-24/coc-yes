@@ -45,7 +45,7 @@ class RoomStore:
             self._save()
             return deepcopy(room), keeper_id
 
-    def join_room(self, invite_code: str, display_name: str, password: str | None = None) -> tuple[dict, str]:
+    def join_room(self, invite_code: str, display_name: str, password: str | None = None, role: str = "player") -> tuple[dict, str]:
         with self._lock:
             room = self._find_by_invite(invite_code)
             member_id = uuid4().hex
@@ -53,7 +53,7 @@ class RoomStore:
                 {
                     "id": member_id,
                     "displayName": display_name,
-                    "role": "player",
+                    "role": role if role in ("player", "spectator") else "player",
                     "joinedAt": self._now(),
                     "online": False,
                 }

@@ -2447,3 +2447,36 @@ select:focus {
   background: var(--bg-soft);
   color: var(--text);
 }
+
+/* ------------------------------------------------------------------ */
+/* Spectator
+/* ------------------------------------------------------------------ */
+
+.spectator-toggle {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.15rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.spectator-toggle input {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Rolls log actions
+/* ------------------------------------------------------------------ */
+
+.rolls-log__header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.rolls-log__header-actions .text-button {
+  font-size: 1.1rem;
+}

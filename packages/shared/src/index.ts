@@ -4,7 +4,7 @@ export type CoreModule = {
   stage: "planned" | "active" | "done";
 };
 
-export type RoomMemberRole = "keeper" | "player";
+export type RoomMemberRole = "keeper" | "player" | "spectator";
 
 export type RoomMember = {
   id: string;

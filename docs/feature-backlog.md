@@ -102,7 +102,7 @@
 | 功能 | 来源 | 说明 |
 |------|------|------|
 | 房间密码 | product-requirements.md 3.1 | **已完成** | 创建时可选密码，加入时验证 |
-| 旁观者身份 | product-requirements.md 3.1 | 只读旁观者 |
+| 旁观者身份 | product-requirements.md 3.1 | **已完成** | 加入时选择旁观者，只读不可发言投掷 |
 | 多 KP | product-requirements.md 3.1 | 一个房间多 KP |
 | 邀请码使用次数限制 | Agent 审查 (KP) #7 | 可设上限 |
 | 房间成员上限 | Agent 审查 (KP) #7 | 限制最大人数 |
@@ -113,7 +113,7 @@
 |------|------|------|
 | 多角色卡支持 | Agent 审查 (调查员) #8 | **已完成** | 一个玩家多张角色卡，active 标记激活态 |
 | 当前值/初始值分离 | Agent 审查 (调查员) #4 | **已完成** | CharacterCard.initialStatus 字段，进度条用初始值做分母 |
-| 多模板支持 | product-requirements.md 4 | 待实现 | 支持多种 COC 角色卡模板 |
+| 多模板支持 | product-requirements.md 4 | **已完成** | 通过 Excel 命名区域映射支持多模板 |
 | 角色卡更新请求 | product-requirements.md 3.5 | **已完成** | 玩家端"请求更新角色卡"按钮，复制消息 |
 | 技能分类展示 | Agent 审查 (调查员) #7 | **已完成** | 战斗/社交/知识感知/其他 四组分类 |
 | HP/SAN 进度条 | Agent 审查 (调查员) #3.8 | **已完成** | status chip 底部彩色进度条 |
@@ -128,12 +128,13 @@
 
 ## 十、UI/UX 增强
 
-| 功能 | 来源 | 说明 |
-|------|------|------|
+| 功能 | 来源 | 状态 | 说明 |
+|------|------|------|------|
 | 移动端深度优化 | Agent 审查 (调查员) #11 | **已完成** | <860px 成员栏置顶、composer 固定底部、卡片紧凑 |
-| PWA 支持 | architecture.md | 离线可用、桌面安装 |
+| PWA 支持 | architecture.md | 待实现 | 离线可用、桌面安装 |
 | 房间级主题 | product-requirements.md 3.8 | **已完成** | KP 选择 6 种主题色，同步全房间，新增羊皮纸 |
 | 总结导出 | mvp-roadmap.md 阶段10 | **已完成** | 复制到剪贴板 + 下载 .md 文件 |
+| 投掷日志导出 | 自研 | **已完成** | rolls log 顶部复制日志按钮 |
 | room-console 拆分 | Agent 审查 (KP) #18 | **已完成** | CharacterCardView 拆出为独立组件 |
 
 ## 十一、后端架构升级
