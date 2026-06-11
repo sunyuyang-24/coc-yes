@@ -209,6 +209,11 @@ class RoomStore:
                 character.setdefault("lockedFields", []).clear()
                 character["lockedFields"].extend(updates.get("lockedFields") or [])
 
+            if "status" in updates and updates["status"]:
+                character.setdefault("status", {}).update(
+                    {k: v for k, v in updates["status"].items() if v is not None}
+                )
+
             # Record change history
             change = {
                 "editorId": editor_id,

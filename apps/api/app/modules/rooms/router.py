@@ -123,6 +123,7 @@ async def update_character(room_id: str, character_id: str, payload: UpdateChara
                 "attributes": [item.model_dump() for item in payload.attributes] if payload.attributes else None,
                 "keeperNotes": payload.keeper_notes,
                 "lockedFields": payload.locked_fields,
+                "status": payload.status,
             },
         )
         room = store.get_room(room_id)

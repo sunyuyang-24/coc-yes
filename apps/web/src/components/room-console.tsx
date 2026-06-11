@@ -551,7 +551,7 @@ function CharacterCardView({
     let filtered = skillSearch
       ? character.skills.filter((s) => s.name.toLowerCase().includes(skillSearch.toLowerCase()))
       : character.skills.filter((s) => s.value != null);
-    if (!showAllSkills && !skillSearch) filtered = filtered.slice(0, 12);
+    if (!showAllSkills && !skillSearch) filtered = filtered.slice(0, 24);
     return filtered;
   })();
   const name = character.basic.name || character.sourceFileName;
@@ -567,6 +567,13 @@ function CharacterCardView({
   );
   const [keeperNotes, setKeeperNotes] = useState(character.keeperNotes || "");
   const [lockedFields, setLockedFields] = useState<string[]>(character.lockedFields ?? []);
+  const [statusDrafts, setStatusDrafts] = useState<Record<string, number | null>>(() => {
+    const s: Record<string, number | null> = {};
+    for (const [k, v] of Object.entries(character.status)) {
+      s[k] = v as number | null;
+    }
+    return s;
+  });
   const toggleLockedField = (field: string) => {
     setLockedFields((prev) =>
       prev.includes(field) ? prev.filter((f) => f !== field) : [...prev, field]
@@ -674,6 +681,9 @@ function CharacterCardView({
             <small>
               困难 {attribute.half ?? "?"} · 极难 {attribute.fifth ?? "?"}
             </small>
+            <small>
+              困难 {attribute.half ?? "?"} · 极难 {attribute.fifth ?? "?"}
+            </small>
             {canRoll && attribute.value ? (
               <button
                 className="inline-roll"
@@ -728,7 +738,7 @@ function CharacterCardView({
               </button>
             ))}
           </div>
-          {!skillSearch && !showAllSkills && character.skills.filter((s) => s.value != null).length > 12 && (
+          {!skillSearch && !showAllSkills && character.skills.filter((s) => s.value != null).length > 24 && (
             <button className="text-button" onClick={() => setShowAllSkills(true)} type="button">
               ??????
             </button>
@@ -739,7 +749,9 @@ function CharacterCardView({
           <div className="bg-detail">
             {Object.entries(character.background).filter(([,v]) => v).map(([k, v]) => (
               <div key={k} className="bg-item">
-                <span className="bg-item__label">{k}</span>
+                <span className="bg-item__label">{
+  ({"appearance":"外貌描述","beliefs":"思想与信念","significantPeople":"重要之人","significantLocations":"意义非凡之地","treasuredPossessions":"宝贵之物","traits":"特质","injuriesScars":"伤口和瘤痕","phobiasManias":"恐惧症和躁狂症","name":"姓名","player":"玩家","occupation":"职业","age":"年龄","gender":"性别","era":"时代","residence":"住地","birthplace":"故乡"} as Record<string,string>)[k] || k
+}</span>
                 <span className="bg-item__value">{v}</span>
               </div>
             ))}

@@ -1093,6 +1093,62 @@ select:focus {
   color: rgba(255, 255, 255, 0.35);
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Status editor in KP form */
+/* ------------------------------------------------------------------ */
+
+.character-editor__status {
+  margin-top: 12px;
+}
+
+.character-editor__status-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.status-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+}
+
+.status-edit-field span {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+}
+
+.status-edit-field input {
+  width: 60px;
+  padding: 4px 6px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 1.3rem;
+  font-family: var(--font-mono);
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------ */
+/* Weapon damage roll button */
+/* ------------------------------------------------------------------ */
+
+.inline-roll--dmg {
+  background: rgba(229, 62, 62, 0.15);
+  border-color: rgba(229, 62, 62, 0.3);
+  color: #e53e3e;
+  font-family: var(--font-mono);
+  font-size: 1.2rem;
+}
+
+.inline-roll--dmg:hover {
+  background: rgba(229, 62, 62, 0.25);
+}
+
 /* ------------------------------------------------------------------ */
 /* Settings Panel
 /* ------------------------------------------------------------------ */
