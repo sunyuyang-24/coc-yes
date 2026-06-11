@@ -267,6 +267,15 @@ class RoomStore:
 
         raise KeyError("character_not_found")
 
+    def _invite_code(self) -> str:
+        alphabet = string.ascii_uppercase + string.digits
+        existing = {room["inviteCode"] for room in self._state["rooms"].values()}
+
+        while True:
+            code = "".join(secrets.choice(alphabet) for _ in range(6))
+
+            if code not in existing:
+                return code
 
     def end_room(self, room_id: str, editor_id: str) -> dict:
         """Mark room as ended and return summary data."""
