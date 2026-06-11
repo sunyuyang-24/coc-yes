@@ -72,7 +72,7 @@ export function CombatPanel({ roomId, memberId, combat, characters, isKeeper, on
               const isCurrent = i === combat.currentActorIndex;
               const char = characters.find((c) => c.id === actor.characterId);
               return (
-                <div key={actor.characterId}
+                <div key={actor.memberId}
                   className={`combat__actor ${isCurrent ? "combat__actor--current" : ""} ${actor.hasActedThisRound ? "combat__actor--acted" : ""}`}>
                   <span className="combat__actor-dex">DEX {actor.dex}</span>
                   <span className="combat__actor-name">{char?.basic?.name || actor.displayName}</span>

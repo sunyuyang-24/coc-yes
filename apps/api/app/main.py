@@ -15,6 +15,7 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=settings.version,
         description="Online Call of Cthulhu table assistant API.",
+        redirect_slashes=False,
     )
 
     @app.middleware("http")
