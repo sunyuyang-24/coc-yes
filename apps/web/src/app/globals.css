@@ -2481,6 +2481,46 @@ select:focus {
   font-size: 1.1rem;
 }
 
+
+/* ------------------------------------------------------------------ */
+/* WebSocket connection indicator
+/* ------------------------------------------------------------------ */
+
+.ws-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.ws-dot--connected {
+  background: #4caf50;
+  box-shadow: 0 0 6px rgba(76, 175, 80, 0.5);
+}
+
+.ws-dot--connecting {
+  background: #ff9800;
+  animation: ws-pulse 1s infinite;
+}
+
+.ws-dot--disconnected {
+  background: #f44336;
+}
+
+@keyframes ws-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.room-console__notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 /* ------------------------------------------------------------------ */
 /* Voice Room (WebRTC)
 /* ------------------------------------------------------------------ */
@@ -2582,6 +2622,129 @@ select:focus {
   min-height: 34px;
   padding: 0 14px;
   font-size: 1.1rem;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* WebSocket connection indicator
+/* ------------------------------------------------------------------ */
+
+.ws-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.ws-dot--connected {
+  background: #4caf50;
+  box-shadow: 0 0 6px rgba(76, 175, 80, 0.5);
+}
+
+.ws-dot--connecting {
+  background: #ff9800;
+  animation: ws-pulse 1s infinite;
+}
+
+.ws-dot--disconnected {
+  background: #f44336;
+}
+
+@keyframes ws-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.room-console__notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Custom scrollbar (dark theme)
+/* ------------------------------------------------------------------ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(236, 229, 211, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(236, 229, 211, 0.25);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(236, 229, 211, 0.15) transparent;
+}
+
+/* ------------------------------------------------------------------ */
+/* Mobile responsiveness
+/* ------------------------------------------------------------------ */
+
+@media (max-width: 768px) {
+  .shell {
+    width: calc(100% - 24px);
+    padding: 20px 0 48px;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+    min-height: auto;
+    gap: 28px;
+    padding-top: 12px;
+  }
+
+  h1 {
+    font-size: clamp(2.2rem, 10vw, 4rem);
+  }
+
+  .status-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .panel {
+    min-height: auto;
+    padding: 18px;
+  }
+
+  .room-board__main {
+    grid-template-columns: 1fr;
+  }
+
+  .room-board__sidebar {
+    position: static;
+  }
+
+  .topbar {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .chat-composer {
+    flex-direction: column;
+  }
+
+  .chat-composer input {
+    min-width: 0;
+    width: 100%;
+  }
 }
 
 /* ------------------------------------------------------------------ */

@@ -1,0 +1,23 @@
+﻿{
+  "name": "CoC Yes - 跑团助手",
+  "short_name": "CoC Yes",
+  "description": "在线克苏鲁的呼唤跑团助手",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "lang": "zh-CN",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

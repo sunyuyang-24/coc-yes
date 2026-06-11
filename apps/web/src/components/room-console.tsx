@@ -96,6 +96,7 @@ export function RoomConsole() {
   const [messageSearch, setMessageSearch] = useState("");
   const [characterFile, setCharacterFile] = useState<File | null>(null);
   const [notice, setNotice] = useState("创建或加入房间后，聊天会实时同步。");
+  const [wsStatus, setWsStatus] = useState<"connecting" | "connected" | "disconnected">("disconnected");
   const messageEndRef = useRef<HTMLDivElement | null>(null);
 
   const currentMember = useMemo(
@@ -139,22 +140,56 @@ export function RoomConsole() {
       return;
     }
 
-    const url = `${wsUrl(`/api/rooms/${room.id}/ws`)}?member_id=${encodeURIComponent(memberId)}`;
-    const socket = new WebSocket(url);
+    let socket: WebSocket;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let mounted = true;
 
-    socket.onmessage = (event) => {
-      const payload = JSON.parse(event.data) as SocketEvent;
+    function connect() {
+      if (!mounted || !room) return;
+      setWsStatus("connecting");
+      const url = `${wsUrl(`/api/rooms/${room.id}/ws`)}?member_id=${encodeURIComponent(memberId!)}`;
+      socket = new WebSocket(url);
 
-      if (payload.type === "room_state" || payload.type === "room_update") {
-        setRoom(payload.room);
-      }
-    };
+      socket.onmessage = (event) => {
+        const payload = JSON.parse(event.data) as SocketEvent;
+        if (payload.type === "room_state" || payload.type === "room_update") {
+          setRoom(payload.room);
+        }
+      };
 
-    socket.onopen = () => setNotice("实时连接已建立。");
-    socket.onclose = () => setNotice("实时连接已断开，刷新页面可重连。");
-    socket.onerror = () => setNotice("实时连接出现错误，请确认后端服务仍在运行。");
+      socket.onopen = () => {
+            setNotice("实时连接已建立。");
+            setWsStatus("connected");
+          };
+
+      socket.onclose = () => {
+        if (!mounted) return;
+        setWsStatus("disconnected");
+        // 指数退避重连: 3s, 6s, 12s, max 30s
+        let delay = 3000;
+        const attempt = () => {
+          if (!mounted) return;
+          setNotice(`实时连接已断开，${Math.round(delay / 1000)}秒后自动重连...`);
+          reconnectTimer = setTimeout(() => {
+            if (!mounted) return;
+            setNotice("正在重连...");
+            connect();
+          }, delay);
+          delay = Math.min(delay * 2, 30000);
+        };
+        attempt();
+      };
+
+      socket.onerror = () => {
+        // 错误后让 onclose 处理重连
+      };
+    }
+
+    connect();
 
     return () => {
+      mounted = false;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       socket.close();
     };
   }, [memberId, room?.id]);
