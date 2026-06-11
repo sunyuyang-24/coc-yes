@@ -66,6 +66,38 @@ class RoomStore:
         with self._lock:
             return deepcopy(self._require_room(room_id))
 
+    def get_room_sanitized(self, room_id: str, member_id: str) -> dict:
+        """返回对指定成员过滤后的房间数据。非 KP 成员看不到暗骰细节和私密消息。"""
+        with self._lock:
+            room = deepcopy(self._require_room(room_id))
+        member = self._find_member(room, member_id)
+        is_keeper = member["role"] == "keeper"
+
+        # 过滤聊天消息中的私密消息
+        room["messages"] = [
+            m for m in room.get("messages", [])
+            if not m.get("privateTo") or m.get("privateTo") == member_id or m.get("senderId") == member_id or is_keeper
+        ]
+
+        # 过滤投掷详情：非 KP 看暗骰只显示 hidden=true, total=null
+        if not is_keeper and "rolls" in room:
+            for roll in room["rolls"]:
+                if roll.get("hidden"):
+                    roll["total"] = None
+                    roll["breakdown"] = []
+                    roll["successLevel"] = None
+                    roll["successLabel"] = None
+
+        # 过滤聊天中暗骰消息的敏感数据
+        for msg in room.get("messages", []):
+            if msg.get("type") == "dice_roll" and msg.get("roll") and msg["roll"].get("hidden") and not is_keeper:
+                msg["roll"]["total"] = None
+                msg["roll"]["breakdown"] = []
+                msg["roll"]["successLevel"] = None
+                msg["roll"]["successLabel"] = None
+
+        return room
+
     def add_message(self, room_id: str, sender_id: str | None, content: str, reply_to: dict | None = None, msg_type: str = "text", private_to: str | None = None) -> dict:
         with self._lock:
             room = self._require_room(room_id)

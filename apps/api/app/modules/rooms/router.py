@@ -4,7 +4,11 @@ from uuid import uuid4
 from app.core.config import settings
 from app.modules.characters.parser import parse_character_card
 from app.modules.characters.schemas import UpdateCharacterRequest
-from app.modules.dice.roller import roll_dice
+from app.modules.dice.roller import (
+    roll_dice, opposed_check, pushing_check,
+    first_aid_check, medicine_check, major_wound_check,
+    insanity_check, weapon_malfunction_check,
+)
 from app.modules.dice.schemas import RollDiceRequest
 from app.modules.rooms.connection_manager import RoomConnectionManager
 from app.modules.rooms.schemas import CreateRoomRequest, JoinRoomRequest, SendMessageRequest
@@ -67,7 +71,7 @@ async def send_message(room_id: str, payload: SendMessageRequest) -> dict:
 
     # For private messages, broadcast a sanitized room to non-recipients
     # Currently we broadcast full room; the frontend filters private messages
-    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
 
     return {"message": message}
 
@@ -89,7 +93,7 @@ async def roll_in_room(room_id: str, payload: RollDiceRequest) -> dict:
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Room or member not found") from error
 
-    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
 
     return {"roll": roll_record}
 
@@ -102,7 +106,7 @@ async def create_npc(room_id: str, name: str = Form("NPC"), keeper_id: str = For
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Room or member not found") from error
 
-    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
     return {"character": character}
 
 
@@ -118,7 +122,7 @@ async def upload_character(room_id: str, owner_id: str = Form(..., alias="ownerI
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Room or member not found") from error
 
-    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
 
     return {"character": character_record}
 
@@ -144,7 +148,7 @@ async def update_character(room_id: str, character_id: str, payload: UpdateChara
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Room, member, or character not found") from error
 
-    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
 
     return {"character": character}
 
@@ -196,7 +200,7 @@ async def upload_voice_message(
         voice_path.unlink(missing_ok=True)
         raise HTTPException(status_code=404, detail="Room or member not found") from error
 
-    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
     return {"voice": voice_record, "message": message}
 
 
@@ -229,7 +233,7 @@ async def activate_room(room_id: str, editor_id: str = Form(..., alias="editorId
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Room or member not found") from error
 
-    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
     return {"room": room}
 
 # ---------- Room summary ----------
@@ -243,7 +247,7 @@ async def end_room(room_id: str, editor_id: str = Form(..., alias="editorId")) -
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Room or member not found") from error
 
-    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
     return {"room": room}
 
 
@@ -267,9 +271,38 @@ async def save_summary_route(room_id: str, editor_id: str = Form(..., alias="edi
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Room or member not found") from error
 
-    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
     return {"summary": summary}
 
+
+# ---------- COC 7e Advanced Rules ----------
+
+@router.post("/rooms/{room_id}/coc/opposed")
+async def opposed_roll(room_id: str, expression: str = Form("1d100"), target: str = Form("50"), opponentExpression: str = Form("1d100"), opponentTarget: str = Form("50")) -> dict:
+    from app.modules.dice.roller import roll_dice as rd
+    actor = rd(expression, target_value=int(target))
+    opponent = rd(opponentExpression, target_value=int(opponentTarget))
+    result = opposed_check(actor["total"], int(target), opponent["total"], int(opponentTarget))
+    return {"actor": actor, "opponent": opponent, "result": result}
+
+@router.post("/rooms/{room_id}/coc/heal")
+async def heal_check(room_id: str, hpCurrent: str = Form("0"), hpMax: str = Form("10"), healType: str = Form("first_aid")) -> dict:
+    chp, mhp = int(hpCurrent), int(hpMax)
+    if healType == "medicine":
+        return medicine_check(chp, mhp)
+    return first_aid_check(chp, mhp)
+
+@router.post("/rooms/{room_id}/coc/wound")
+async def wound_check(room_id: str, damage: str = Form("0"), hpMax: str = Form("10")) -> dict:
+    return major_wound_check(int(damage), int(hpMax))
+
+@router.post("/rooms/{room_id}/coc/insanity")
+async def insanity_roll(room_id: str, sanLoss: str = Form("0"), currentSAN: str = Form("50"), maxSAN: str = Form("50")) -> dict:
+    return insanity_check(int(sanLoss), int(currentSAN), int(maxSAN))
+
+@router.post("/rooms/{room_id}/coc/malfunction")
+async def malf_check(room_id: str, total: str = Form("0"), malfValue: str = Form("96")) -> dict:
+    return weapon_malfunction_check(int(total), int(malfValue))
 
 async def room_socket(websocket: WebSocket, room_id: str, member_id: str) -> None:
     try:
@@ -278,8 +311,8 @@ async def room_socket(websocket: WebSocket, room_id: str, member_id: str) -> Non
         await websocket.close(code=4404)
         return
 
-    await manager.connect(room_id, websocket)
-    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+    await manager.connect(room_id, websocket, member_id)
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
 
     try:
         await websocket.send_json({"type": "room_state", "room": room})
@@ -296,4 +329,4 @@ async def room_socket(websocket: WebSocket, room_id: str, member_id: str) -> Non
         except KeyError:
             return
 
-        await manager.broadcast(room_id, {"type": "room_update", "room": room})
+        await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)

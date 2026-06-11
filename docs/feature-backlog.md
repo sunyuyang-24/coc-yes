@@ -49,10 +49,10 @@
 | NPC 状态追踪 | Agent 审查 (KP) | HP/SAN 实时追踪 |
 
 ### 4.2 暗骰增强
-| 功能 | 来源 | 说明 |
-|------|------|------|
-| 暗骰独立面板 | product-requirements.md 3.7 | KP 专用暗骰面板 |
-| 暗骰 WebSocket 按角色过滤 | Agent 审查 (KP) #6 | 暗骰结果不透传给非 KP 客户端 |
+| 功能 | 来源 | 状态 | 说明 |
+|------|------|------|------|
+| 暗骰独立面板 | product-requirements.md 3.7 | 待实现 | KP 专用暗骰面板 |
+| 暗骰 WebSocket 按角色过滤 | Agent 审查 (KP) #6 | **已完成** | connection_manager 按 member role 过滤广播数据 |
 
 ### 4.3 私密线索投递
 | 功能 | 来源 | 说明 |
@@ -78,16 +78,16 @@
 | 常用规则收藏 | product-requirements.md 3.6 | 收藏高频条目 |
 | PDF 页码直跳 | Agent 审查 (KP) #15 | 搜索结果直跳到 PDF 对应页 |
 
-## 五、COC 7e 规则补全
+## 五、COC 7e 规则补全（已实现核心函数 + API）
 
-| 功能 | 来源 | 说明 |
-|------|------|------|
-| 对抗检定 | 规则书审查 #10 | 双方投掷比较成功等级 |
-| 推动检定 (Pushing) | 规则书 CRB p79 | 失败后可推动，再次投掷但后果更严重 |
-| 急救/治疗 | 规则书 CRB p66 | First Aid 恢复 1HP，Medicine 给恢复奖励骰 |
-| 重伤追踪 (Major Wound) | 规则书 CRB | 单次伤害 >= HP/2 即为重伤 |
-| 临时疯狂/不定疯狂 | 规则书 CRB p156 | 单次 SAN 损失 >=5 → 临时疯狂 |
-| 武器 malf 判定 | 规则书 CRB | 枪械投出 malf 值则卡壳 |
+| 功能 | 来源 | 状态 | 说明 |
+|------|------|------|------|
+| 对抗检定 | 规则书审查 #10 | **已完成** | POST /api/rooms/{id}/coc/opposed |
+| 推动检定 (Pushing) | 规则书 CRB p79 | **已完成** | pushing_check() 判断是否可推动 |
+| 急救/治疗 | 规则书 CRB p66 | **已完成** | POST /api/rooms/{id}/coc/heal (first_aid/medicine) |
+| 重伤追踪 (Major Wound) | 规则书 CRB | **已完成** | POST /api/rooms/{id}/coc/wound |
+| 临时疯狂/不定疯狂 | 规则书 CRB p156 | **已完成** | POST /api/rooms/{id}/coc/insanity |
+| 武器 malf 判定 | 规则书 CRB | **已完成** | POST /api/rooms/{id}/coc/malfunction |
 
 ## 六、社交/沟通增强
 
@@ -120,11 +120,11 @@
 
 ## 九、投掷体验增强
 
-| 功能 | 来源 | 说明 |
-|------|------|------|
-| 投掷与规则搜索关联 | Agent 审查 (调查员) #3.4 | 投掷结果旁显示"查规则"按钮 |
-| 记住上次投掷参数 | Agent 审查 (调查员) #5.2 | targetValue 记住上次输入值 |
-| 快捷投掷支持奖励骰 | Agent 审查 (调查员) #6 | 传递 bonusPenalty 参数 |
+| 功能 | 来源 | 状态 | 说明 |
+|------|------|------|------|
+| 投掷与规则搜索关联 | Agent 审查 (调查员) #3.4 | **已完成** | 投掷结果旁"查规则"按钮，自动填入标签搜索 |
+| 记住上次投掷参数 | Agent 审查 (调查员) #5.2 | 待实现 | targetValue 记住上次输入值 |
+| 快捷投掷支持奖励骰 | Agent 审查 (调查员) #6 | 待实现 | 传递 bonusPenalty 参数 |
 
 ## 十、UI/UX 增强
 
