@@ -3,6 +3,7 @@
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CharacterCard, DiceRollResult, RoomDetail } from "@coc-yes/shared";
+import { RulesSearchPanel } from "@/components/rules-search-panel";
 import { apiRequest, apiUrl, wsUrl } from "@/lib/api";
 
 type RoomResponse = {
@@ -441,6 +442,15 @@ export function RoomConsole() {
           ))}
         </section>
       ) : null}
+
+      <section className="rules-shelf">
+        <RulesSearchPanel
+          showSendToChat
+          onSendToChat={(text) => {
+            setDraft(text);
+          }}
+        />
+      </section>
     </section>
   );
 }

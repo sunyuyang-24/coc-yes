@@ -1,0 +1,1 @@
+"""Rules module for COC rulebook search."""
