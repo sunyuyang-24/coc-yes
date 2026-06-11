@@ -74,6 +74,8 @@ export function RoomConsole() {
   const [hiddenRoll, setHiddenRoll] = useState(false);
   const [replyTo, setReplyTo] = useState<{ id: string; senderName: string; content: string } | null>(null);
   const [sanQuickRoll, setSanQuickRoll] = useState(false);
+  const [rollsFilter, setRollsFilter] = useState("");
+  const [privateTarget, setPrivateTarget] = useState("");
   const [characterFile, setCharacterFile] = useState<File | null>(null);
   const [notice, setNotice] = useState("创建或加入房间后，聊天会实时同步。");
   const messageEndRef = useRef<HTMLDivElement | null>(null);
@@ -746,23 +748,51 @@ function CharacterCardView({
         ))}
       </div>
 
-      {Object.keys(character.status).length > 0 && (
-        <div className="status-panel">
-          {Object.entries(character.status).map(([key, val]) => {
-            if (val == null) return null;
-            const labels: Record<string, string> = {
-              hp: "HP", san: "SAN", mp: "MP", mov: "MOV",
-              db: "伤害加值", build: "体格", armor: "护甲"
-            };
-            return (
-              <div key={key} className="status-chip">
-                <span className="status-chip__label">{labels[key] || key.toUpperCase()}</span>
-                <span className="status-chip__value">{val}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {Object.keys(character.status).length > 0 && (() => {
+        const strAttr = character.attributes.find(a => a.key === "STR");
+        const conAttr = character.attributes.find(a => a.key === "CON");
+        const sizAttr = character.attributes.find(a => a.key === "SIZ");
+        const powAttr = character.attributes.find(a => a.key === "POW");
+        const strVal = strAttr?.value ?? 0;
+        const conVal = conAttr?.value ?? 0;
+        const sizVal = sizAttr?.value ?? 0;
+        const powVal = powAttr?.value ?? 0;
+        const maxVals: Record<string, number | null> = {
+          hp: conVal > 0 && sizVal > 0 ? Math.floor((conVal + sizVal) / 10) : null,
+          san: powVal > 0 ? powVal : null,
+          mp: powVal > 0 ? Math.floor(powVal / 5) : null,
+        };
+        return (
+          <div className="status-panel">
+            {Object.entries(character.status).map(([key, val]) => {
+              if (val == null) return null;
+              const labels: Record<string, string> = {
+                hp: "HP", san: "SAN", mp: "MP", mov: "MOV",
+                db: "伤害加值", build: "体格", armor: "护甲"
+              };
+              const maxVal = maxVals[key];
+              const pct = maxVal && typeof val === "number" ? Math.round((val / maxVal) * 100) : null;
+              const barColor = key === "hp" ? (pct != null && pct <= 25 ? "var(--danger)" : "var(--accent)")
+                : key === "san" ? "#7c6ff7"
+                : key === "mp" ? "#4fc3f7"
+                : null;
+              return (
+                <div key={key} className="status-chip">
+                  <span className="status-chip__label">{labels[key] || key.toUpperCase()}</span>
+                  <span className="status-chip__value">
+                    {val}{maxVal != null ? " / " + maxVal : ""}
+                  </span>
+                  {barColor && pct != null && (
+                    <div className="status-chip__bar">
+                      <div className="status-chip__bar-fill" style={{ width: Math.min(pct, 100) + "%", background: barColor }} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       <div className="character-card__split">
         <div>
