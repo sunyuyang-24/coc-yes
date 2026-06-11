@@ -24,11 +24,11 @@ const DEFAULTS: UserSettings = {
 const STORAGE_KEY = "coc-yes.settings";
 
 const BACKGROUNDS: Array<{ key: BackgroundKey; label: string; color: string }> = [
-  { key: "black", label: "纯黑", color: "#0a0a0c" },
-  { key: "graphite", label: "深灰", color: "#121214" },
-  { key: "green", label: "墨绿", color: "#060f0a" },
-  { key: "blue", label: "深蓝", color: "#060e1a" },
-  { key: "red", label: "暗红", color: "#160608" },
+  { key: "black", label: "纯黑", color: "#000000" },
+  { key: "graphite", label: "深灰", color: "#141414" },
+  { key: "green", label: "墨绿", color: "#0A1210" },
+  { key: "blue", label: "深蓝", color: "#0A1018" },
+  { key: "red", label: "暗红", color: "#140A0C" },
 ];
 
 let _cached: UserSettings | null = null;
