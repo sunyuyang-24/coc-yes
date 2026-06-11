@@ -4,6 +4,8 @@ from uuid import uuid4
 from app.core.config import settings
 from app.modules.characters.parser import parse_character_card
 from app.modules.characters.schemas import UpdateCharacterRequest
+import json as _json
+
 from app.modules.dice.roller import (
     roll_dice, opposed_check, pushing_check,
     first_aid_check, medicine_check, major_wound_check,
@@ -335,7 +337,6 @@ async def room_socket(websocket: WebSocket, room_id: str, member_id: str) -> Non
     try:
         await websocket.send_json({"type": "room_state", "room": room})
 
-        import json as _json
         while True:
             raw = await websocket.receive_text()
             payload = _json.loads(raw)

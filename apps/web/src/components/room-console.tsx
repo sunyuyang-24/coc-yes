@@ -589,6 +589,7 @@ export function RoomConsole() {
               roomId={room.id}
               memberId={memberId || ""}
               memberName={currentMember.displayName}
+              memberNames={Object.fromEntries(room.members.map(m => [m.id, m.displayName]))}
             />
           )}
           <section className="chat-panel">
