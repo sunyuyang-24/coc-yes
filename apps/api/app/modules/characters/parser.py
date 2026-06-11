@@ -70,11 +70,25 @@ def parse_character_card(content: bytes, filename: str) -> dict:
 
     cells = workbook.cells("人物卡")
 
+    attributes = _parse_attributes(cells, workbook.defined_names)
+    status = _parse_status(cells)
+
+    # Compute DB/Build from STR+SIZ per COC 7e table
+    str_val = next((a["value"] for a in attributes if a["key"] == "STR"), None)
+    siz_val = next((a["value"] for a in attributes if a["key"] == "SIZ"), None)
+    db_formula, computed_build = _compute_db_build(str_val, siz_val)
+
+    # Store computed DB formula as display text, numeric build for comparison
+    if status.get("damageBonus") is None and db_formula is not None:
+        status["damageBonus"] = db_formula
+    if status.get("build") is None and computed_build is not None:
+        status["build"] = computed_build
+
     return {
         "sourceFileName": filename,
         "basic": _parse_basic(cells),
-        "attributes": _parse_attributes(cells, workbook.defined_names),
-        "status": _parse_status(cells),
+        "attributes": attributes,
+        "status": status,
         "skills": _parse_skills(cells),
         "weapons": _parse_weapons(cells),
         "background": _parse_background(cells),
@@ -111,6 +125,28 @@ def _parse_attributes(cells: dict[str, str], defined_names: dict[str, str]) -> l
 def _parse_status(cells: dict[str, str]) -> dict:
     return {key: _number(cells.get(ref)) for key, ref in STATUS_REFS.items()}
 
+
+# COC 7e Damage Bonus / Build table (STR + SIZ)
+# COC 7e Damage Bonus table (CRB p34)
+# STR+SIZ range => (Damage Bonus formula, Build)
+_DB_TABLE = [
+    (64, "-2", -2),
+    (84, "-1", -1),
+    (124, "0", 0),
+    (164, "+1D4", 1),
+    (204, "+1D6", 2),
+    (284, "+2D6", 3),
+    (364, "+3D6", 4),
+]
+
+def _compute_db_build(str_val: int | None, siz_val: int | None) -> tuple[str | None, int | None]:
+    if str_val is None or siz_val is None:
+        return None, None
+    total = str_val + siz_val
+    for threshold, formula, build in _DB_TABLE:
+        if total <= threshold:
+            return formula, build
+    return "+4D6", 5  # beyond 364
 
 def _parse_skills(cells: dict[str, str]) -> list[dict]:
     skills: list[dict] = []
