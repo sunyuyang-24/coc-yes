@@ -58,7 +58,7 @@
 | 功能 | 来源 | 说明 |
 |------|------|------|
 | KP→玩家私密消息 | product-requirements.md 3.7 | 向特定玩家发送线索 |
-| KP 私密频道 | product-requirements.md 3.2 | KP 专用私密聊天频道 |
+| KP 私密频道 | product-requirements.md 3.2 | **已完成** | 私密线索下拉 + 悄悄话选择器覆盖 |
 
 ### 4.4 战役管理
 | 功能 | 来源 | 说明 |
@@ -93,9 +93,9 @@
 
 | 功能 | 来源 | 说明 |
 |------|------|------|
-| 私聊 | product-requirements.md 3.2 | 待实现 | 玩家间一对一私聊 |
+| 私聊 | product-requirements.md 3.2 | **已完成** | 悄悄话选择器，仅双方可见 |
 | 消息搜索 | product-requirements.md 3.2 | **已完成** | 聊天面板顶部搜索框 |
-| @提及 | Agent 审查 (调查员) #13 | 待实现 | 输入 @ 弹出成员列表，高亮提及 |
+| @提及 | Agent 审查 (调查员) #13 | **已完成** | @人名自动高亮，后台解析 mentionIds |
 
 ## 七、房间/权限增强
 
@@ -133,7 +133,7 @@
 | 移动端深度优化 | Agent 审查 (调查员) #11 | 底部 tab bar、手势操作 |
 | PWA 支持 | architecture.md | 离线可用、桌面安装 |
 | 房间级主题 | product-requirements.md 3.8 | KP 设置房间主题，同步给所有玩家 |
-| 总结导出 | mvp-roadmap.md 阶段10 | 导出为 Markdown/PDF |
+| 总结导出 | mvp-roadmap.md 阶段10 | **已完成** | 复制到剪贴板 + 下载 .md 文件 |
 | room-console 拆分 | Agent 审查 (KP) #18 | **已完成** | CharacterCardView 拆出为独立组件 |
 
 ## 十一、后端架构升级

@@ -63,7 +63,9 @@ async def send_message(room_id: str, payload: SendMessageRequest) -> dict:
             payload.content,
             reply_to=reply_dict,
             msg_type=payload.type or "text",
-            private_to=payload.private_to
+            private_to=payload.private_to,
+            whisper_to=payload.whisper_to,
+            mention_ids=payload.mention_ids
         )
         room = store.get_room(room_id)
     except KeyError as error:

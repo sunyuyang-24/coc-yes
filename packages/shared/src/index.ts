@@ -96,6 +96,8 @@ export type ChatMessage = {
   roll?: DiceRollResult;
   replyTo?: { id: string; senderName: string; content: string };
   privateTo?: string;
+  whisperTo?: string;
+  mentionIds?: string[];
   createdAt: string;
 };
 

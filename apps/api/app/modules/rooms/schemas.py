@@ -28,3 +28,5 @@ class SendMessageRequest(CamelModel):
     reply_to: Optional[ReplyToRef] = Field(default=None, alias="replyTo")
     type: Optional[str] = Field(default="text")
     private_to: Optional[str] = Field(default=None, alias="privateTo")
+    whisper_to: Optional[str] = Field(default=None, alias="whisperTo")
+    mention_ids: Optional[list[str]] = Field(default=None, alias="mentionIds")

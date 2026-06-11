@@ -66,6 +66,25 @@ export function SummaryPanel({ room, memberId, isKeeper }: Props) {
     }
   }, [room.id, memberId, isKeeper]);
 
+  const exportCopy = useCallback(() => {
+    navigator.clipboard.writeText(draft).then(() => {
+      setNotice("总结已复制到剪贴板！");
+    }).catch(() => {
+      setNotice("复制失败，请手动复制。");
+    });
+  }, [draft]);
+
+  const exportDownload = useCallback(() => {
+    const blob = new Blob([draft], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = room.name + "_summary.md";
+    a.click();
+    URL.revokeObjectURL(url);
+    setNotice("总结已下载！");
+  }, [draft, room.name]);
+
   const saveSummary = useCallback(async () => {
     if (!isKeeper) return;
     setSaving(true);
@@ -154,6 +173,20 @@ export function SummaryPanel({ room, memberId, isKeeper }: Props) {
               type="button"
             >
               {saving ? "保存中..." : "保存总结"}
+            </button>
+            <button
+              className="button button--ghost"
+              onClick={exportCopy}
+              type="button"
+            >
+              复制总结
+            </button>
+            <button
+              className="button button--ghost"
+              onClick={exportDownload}
+              type="button"
+            >
+              下载 .md
             </button>
           </div>
         </div>

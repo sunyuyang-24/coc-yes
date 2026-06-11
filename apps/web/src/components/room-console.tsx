@@ -88,6 +88,7 @@ export function RoomConsole() {
   const [rollsFilter, setRollsFilter] = useState("");
   const [privateTarget, setPrivateTarget] = useState("");
   const [npcName, setNpcName] = useState("");
+  const [whisperTarget, setWhisperTarget] = useState("");
   const [messageSearch, setMessageSearch] = useState("");
   const [characterFile, setCharacterFile] = useState<File | null>(null);
   const [notice, setNotice] = useState("创建或加入房间后，聊天会实时同步。");

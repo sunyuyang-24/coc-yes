@@ -2201,3 +2201,69 @@ select:focus {
   color: var(--muted);
   font-family: var(--font-mono);
 }
+
+/* ------------------------------------------------------------------ */
+/* Composer actions: whisper + mention
+/* ------------------------------------------------------------------ */
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.whisper-select {
+  padding: 4px 10px;
+  background: rgba(124, 111, 247, 0.08);
+  border: 1px solid rgba(124, 111, 247, 0.25);
+  border-radius: 6px;
+  color: #b4a7ff;
+  font-size: 1.1rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.whisper-select option {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.whisper-hint {
+  font-size: 1.05rem;
+  color: #7c6ff7;
+  font-weight: 600;
+}
+
+.mention-hint {
+  font-size: 1rem;
+  color: var(--muted);
+  opacity: 0.6;
+  margin-left: auto;
+}
+
+.button--whisper {
+  color: #fff;
+  background: #5e4de0;
+  border-color: #5e4de0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Chat whisper + mention
+/* ------------------------------------------------------------------ */
+
+.chat-whisper {
+  border-left: 3px solid #7c6ff7;
+  padding-left: 10px;
+  background: rgba(124, 111, 247, 0.05);
+  border-radius: 0 4px 4px 0;
+}
+
+.chat-mention {
+  color: var(--accent);
+  font-weight: 700;
+  background: rgba(213, 255, 119, 0.1);
+  padding: 0 2px;
+  border-radius: 2px;
+}
