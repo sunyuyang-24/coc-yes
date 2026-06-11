@@ -14,7 +14,15 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="zh-CN" data-background="black">
-      <body>{children}</body>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+      </head>
+      <body>
+        <div className="noise-overlay" aria-hidden="true" />
+        {children}
+      </body>
     </html>
   );
 }

@@ -173,31 +173,47 @@ export function RoomConsole() {
     return (
       <section className="setup-screens">
         <form className="setup-card" onSubmit={createRoom}>
-          <p className="panel__kicker">Keeper</p>
+          <p className="panel__kicker">✦ Keeper</p>
           <h2>创建房间</h2>
+          <p className="setup-card__desc">作为守秘人主持一场克苏鲁的呼唤游戏</p>
           <div className="setup-card__fields">
-            <label>房间名<input value={roomName} onChange={(e) => setRoomName(e.target.value)} /></label>
-            <label>KP 名称<input value={keeperName} onChange={(e) => setKeeperName(e.target.value)} /></label>
-            <label>密码 <small>（选填）</small><input value={roomPassword} onChange={(e) => setRoomPassword(e.target.value)} placeholder="无密码" /></label>
+            <label>房间名
+              <input type="text" value={roomName} onChange={(e) => setRoomName(e.target.value)}
+                placeholder="例如：暗黑边缘" autoFocus />
+            </label>
+            <label>KP 名称
+              <input type="text" value={keeperName} onChange={(e) => setKeeperName(e.target.value)} />
+            </label>
+            <label>密码 <small>（选填）</small>
+              <input type="password" value={roomPassword} onChange={(e) => setRoomPassword(e.target.value)} placeholder="不设密码" />
+            </label>
           </div>
           <div className="setup-card__actions">
-            <button className="button button--primary" type="submit">创建</button>
+            <button className="button button--primary" type="submit">创建游戏房间</button>
           </div>
         </form>
         <form className="setup-card" onSubmit={joinRoom}>
-          <p className="panel__kicker">Investigator</p>
+          <p className="panel__kicker">◈ Investigator</p>
           <h2>加入房间</h2>
+          <p className="setup-card__desc">使用邀请码加入已存在的游戏房间</p>
           <div className="setup-card__fields">
-            <label>邀请码<input value={inviteCode} onChange={(e) => setInviteCode(e.target.value.toUpperCase())} placeholder="如 A1B2C3" /></label>
-            <label>显示名<input value={playerName} onChange={(e) => setPlayerName(e.target.value)} /></label>
-            <label>密码 <small>（选填）</small><input value={joinPassword} onChange={(e) => setJoinPassword(e.target.value)} placeholder="无密码" /></label>
+            <label>邀请码
+              <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                placeholder="例如 A1B2C3" />
+            </label>
+            <label>显示名
+              <input type="text" value={playerName} onChange={(e) => setPlayerName(e.target.value)} />
+            </label>
+            <label>密码 <small>（选填）</small>
+              <input type="password" value={joinPassword} onChange={(e) => setJoinPassword(e.target.value)} placeholder="不设密码" />
+            </label>
             <label className="spectator-toggle">
               <input type="checkbox" checked={joinAsSpectator} onChange={(e) => setJoinAsSpectator(e.target.checked)} />
               以观察者身份加入（只看不说）
             </label>
           </div>
           <div className="setup-card__actions">
-            <button className="button button--ghost" type="submit">加入</button>
+            <button className="button button--ghost" type="submit">加入游戏房间</button>
           </div>
         </form>
       </section>
