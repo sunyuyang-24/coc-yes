@@ -377,8 +377,13 @@ async def structured_check(room_id: str, payload: CheckRequest) -> dict:
 @router.post("/rooms/{room_id}/rolls/san-check")
 async def san_check(room_id: str, payload: SanCheckRequest) -> dict:
     try:
+        room = store._require_room(room_id)
+        character = store._find_character(room, payload.character_id)
+        roller_id = character.get("ownerId", "")
+        if not roller_id:
+            raise HTTPException(status_code=400, detail="Character has no owner")
         result = store.san_check_roll(
-            room_id, payload.character_id, payload.character_id,
+            room_id, roller_id, payload.character_id,
             payload.success_loss, payload.failure_loss, payload.hidden,
         )
         room = store.get_room(room_id)

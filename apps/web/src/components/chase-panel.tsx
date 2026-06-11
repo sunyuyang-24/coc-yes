@@ -24,7 +24,7 @@ export function ChasePanel({ roomId, memberId, chase, characters, isKeeper, onCl
     if (sending || !participantId) return;
     setSending(true);
     try {
-      await fetch(apiUrl(`/api/rooms/${roomId}/chase/action`), {
+      const res = await fetch(apiUrl(`/api/rooms/${roomId}/chase/action`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -34,6 +34,10 @@ export function ChasePanel({ roomId, memberId, chase, characters, isKeeper, onCl
           hidden: hidden && isKeeper,
         }),
       });
+      if (!res.ok) {
+        const err = await res.text();
+        console.error("Chase action failed:", err);
+      }
     } finally {
       setSending(false);
     }
@@ -42,8 +46,8 @@ export function ChasePanel({ roomId, memberId, chase, characters, isKeeper, onCl
   async function endChase() {
     const form = new FormData();
     form.append("editorId", memberId);
-    await fetch(apiUrl(`/api/rooms/${roomId}/chase/end`), { method: "POST", body: form });
-    onClose();
+    const res = await fetch(apiUrl(`/api/rooms/${roomId}/chase/end`), { method: "POST", body: form });
+    if (res.ok) onClose();
   }
 
   const maxPos = Math.max(...chase.participants.map((p) => p.position), 10);
@@ -126,7 +130,7 @@ export function ChasePanel({ roomId, memberId, chase, characters, isKeeper, onCl
                   {chase.participants.map((p) => {
                     const c = characters.find((ch) => ch.id === p.characterId);
                     return (
-                      <option key={p.characterId} value={p.characterId}>
+                      <option key={p.memberId} value={p.memberId}>
                         {c?.basic?.name || p.displayName} ({p.role === "pursuer" ? "追" : "逃"})
                       </option>
                     );

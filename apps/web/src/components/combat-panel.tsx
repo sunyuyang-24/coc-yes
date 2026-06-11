@@ -14,7 +14,7 @@ type Props = {
 };
 
 export function CombatPanel({ roomId, memberId, combat, characters, isKeeper, onClose }: Props) {
-  const [attackerId, setAttackerId] = useState(combat.actors[combat.currentActorIndex]?.characterId || "");
+  const [attackerId, setAttackerId] = useState(combat.actors[combat.currentActorIndex]?.memberId || "");
   const [defenderId, setDefenderId] = useState("");
   const [actionType, setActionType] = useState<"attack" | "dodge" | "maneuver" | "fight_back">("attack");
   const [weaponIndex, setWeaponIndex] = useState(0);
@@ -27,7 +27,7 @@ export function CombatPanel({ roomId, memberId, combat, characters, isKeeper, on
     if (sending || !attackerId || !defenderId) return;
     setSending(true);
     try {
-      await fetch(apiUrl(`/api/rooms/${roomId}/combat/action`), {
+      const res = await fetch(apiUrl(`/api/rooms/${roomId}/combat/action`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -38,6 +38,10 @@ export function CombatPanel({ roomId, memberId, combat, characters, isKeeper, on
           hidden: hidden && isKeeper,
         }),
       });
+      if (!res.ok) {
+        const err = await res.text();
+        console.error("Combat action failed:", err);
+      }
     } finally {
       setSending(false);
     }
@@ -46,8 +50,8 @@ export function CombatPanel({ roomId, memberId, combat, characters, isKeeper, on
   async function endCombat() {
     const form = new FormData();
     form.append("editorId", memberId);
-    await fetch(apiUrl(`/api/rooms/${roomId}/combat/end`), { method: "POST", body: form });
-    onClose();
+    const res = await fetch(apiUrl(`/api/rooms/${roomId}/combat/end`), { method: "POST", body: form });
+    if (res.ok) onClose();
   }
 
   const currentChar = characters.find((c) => c.id === currentActor?.characterId);
@@ -112,10 +116,10 @@ export function CombatPanel({ roomId, memberId, combat, characters, isKeeper, on
                 <label>目标</label>
                 <select value={defenderId} onChange={(e) => setDefenderId(e.target.value)}>
                   <option value="">选择目标...</option>
-                  {combat.actors.filter((a) => a.characterId !== currentActor.characterId).map((a) => {
+                  {combat.actors.filter((a) => a.memberId !== currentActor.memberId).map((a) => {
                     const c = characters.find((ch) => ch.id === a.characterId);
                     return (
-                      <option key={a.characterId} value={a.characterId}>
+                      <option key={a.memberId} value={a.memberId}>
                         {c?.basic?.name || a.displayName} (HP {a.hp}/{a.hpMax})
                       </option>
                     );

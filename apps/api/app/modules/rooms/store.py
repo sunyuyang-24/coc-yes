@@ -612,6 +612,8 @@ class RoomStore:
             current_actor = actors[current_idx]
             if current_actor["memberId"] != attacker_id:
                 raise ValueError("Not your turn")
+            if current_actor["hasActedThisRound"]:
+                raise ValueError("This actor has already acted this round")
 
             attacker_char = self._find_character(room, current_actor["characterId"])
             defender_actor = next((a for a in actors if a["memberId"] == defender_id), None)
@@ -919,11 +921,7 @@ class RoomStore:
         if roll.get("hidden"):
             return f"[暗骰] {roll['rollerName']} 进行了一次暗骰"
         label = f"「{roll['label']}」" if roll.get("label") else roll["expression"]
-        if roll.get("hidden"):
-            return f"[暗骰] {roll['rollerName']} {label}"
         result = f"{label} 投掷结果 {roll['total']}"
-
         if roll.get("successLabel"):
             result = f"{result}，{roll['successLabel']}"
-
         return result
