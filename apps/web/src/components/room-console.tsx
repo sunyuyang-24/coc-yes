@@ -76,6 +76,7 @@ export function RoomConsole() {
   const [sanQuickRoll, setSanQuickRoll] = useState(false);
   const [rollsFilter, setRollsFilter] = useState("");
   const [privateTarget, setPrivateTarget] = useState("");
+  const [npcName, setNpcName] = useState("");
   const [characterFile, setCharacterFile] = useState<File | null>(null);
   const [notice, setNotice] = useState("创建或加入房间后，聊天会实时同步。");
   const messageEndRef = useRef<HTMLDivElement | null>(null);
@@ -292,6 +293,25 @@ export function RoomConsole() {
     setNotice("已离开本地房间视图，房间记录仍保留在后端。");
   }
 
+  async function createNPC(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!room || !memberId || !npcName.trim()) return;
+    const name = npcName.trim();
+    setNpcName("");
+
+    const form = new FormData();
+    form.append("name", name);
+    form.append("keeperId", memberId);
+    await fetch(apiUrl("/api/rooms/" + room.id + "/characters/npc"), {
+      method: "POST",
+      body: form
+    });
+
+    const detail = await apiRequest<RoomOnlyResponse>("/api/rooms/" + room.id);
+    setRoom(detail.room);
+    setNotice("NPC \"" + name + "\" 已创建。");
+  }
+
   function enterRoom(nextRoom: RoomDetail, nextMemberId: string) {
     setRoom(nextRoom);
     setMemberId(nextMemberId);
@@ -440,6 +460,24 @@ export function RoomConsole() {
               </button>
             </form>
 
+            {currentMember?.role === "keeper" && (
+              <form className="npc-panel" onSubmit={createNPC}>
+                <p className="panel__kicker">NPC</p>
+                <h3>快速创建 NPC</h3>
+                <label>
+                  NPC 名称
+                  <input
+                    value={npcName}
+                    onChange={(e) => setNpcName(e.target.value)}
+                    placeholder="例如: 守夜人、图书管理员..."
+                  />
+                </label>
+                <button className="button button--ghost" type="submit">
+                  创建 NPC
+                </button>
+              </form>
+            )}
+
             <button className="text-button" type="button" onClick={leaveLocalRoom}>
               仅退出本地视图
             </button>
@@ -485,16 +523,26 @@ export function RoomConsole() {
 
       {room?.characters?.length ? (
         <section className="character-shelf">
-          {room.characters.map((character) => (
-            <CharacterCardView
-              canEdit={currentMember?.role === "keeper"}
-              canRoll={Boolean(currentMember)}
-              character={character}
-              key={character.id}
-              onRoll={rollCharacterCheck}
-              onUpdate={updateCharacter}
-            />
-          ))}
+          {room.characters.map((character) => {
+            const isNPC = character.basic.occupation === "NPC" || character.sourceFileName === "npc";
+            return (
+              <div key={character.id} className={isNPC ? "character-card--npc-wrapper" : undefined}>
+                {isNPC && (
+                  <div className="npc-card-header">
+                    <span className="npc-badge">NPC</span>
+                    <span className="npc-name">{character.basic.name || "NPC"}</span>
+                  </div>
+                )}
+                <CharacterCardView
+                  canEdit={currentMember?.role === "keeper"}
+                  canRoll={Boolean(currentMember)}
+                  character={character}
+                  onRoll={rollCharacterCheck}
+                  onUpdate={updateCharacter}
+                />
+              </div>
+            );
+          })}
         </section>
       ) : null}
 
