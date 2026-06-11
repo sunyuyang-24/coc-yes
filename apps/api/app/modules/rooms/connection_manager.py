@@ -25,8 +25,10 @@ class RoomConnectionManager:
         self._member_map.pop(websocket, None)
 
     async def broadcast(self, room_id: str, payload: dict, store=None) -> None:
+        # 快照连接列表，防止遍历时被其他协程修改
+        connections = list(self._connections.get(room_id, []))
         stale: list[WebSocket] = []
-        for websocket in list(self._connections.get(room_id, [])):
+        for websocket in connections:
             try:
                 data = payload
                 if store and payload.get("type") == "room_update" and "room" in payload:
@@ -38,10 +40,9 @@ class RoomConnectionManager:
                         except Exception:
                             pass
                 await websocket.send_json(data)
-            except WebSocketDisconnect:
+            except (WebSocketDisconnect, RuntimeError):
                 stale.append(websocket)
-            except RuntimeError:
-                stale.append(websocket)
+        # 批量清理断开连接
         for websocket in stale:
             self.disconnect(room_id, websocket)
 
