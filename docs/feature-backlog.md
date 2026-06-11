@@ -21,13 +21,13 @@
 
 ## 二、阶段9：实时语音（路线图优先级：阶段9）
 
-| 功能 | 来源 | 说明 |
-|------|------|------|
-| 多人实时语音房间 | mvp-roadmap.md 阶段9 | 接入 LiveKit 或 WebRTC，房间成员实时语音 |
-| 成员静音状态 | mvp-roadmap.md 阶段9 | 显示谁在说话、谁静音 |
-| 断线重连 | mvp-roadmap.md 阶段9 | 网络中断后自动恢复 |
-| 服务端录制 | mvp-roadmap.md 阶段9 | KP 可控制录音起止 |
-| 语音频道管理 | product-requirements.md 3.3 | KP 可开关语音频道 |
+| 功能 | 来源 | 状态 | 说明 |
+|------|------|------|------|
+| 多人实时语音房间 | mvp-roadmap.md 阶段9 | **已完成** | WebRTC Mesh 架构，信令走现有 WebSocket |
+| 成员静音状态 | mvp-roadmap.md 阶段9 | **已完成** | 每个成员独立静音，实时同步状态 |
+| 断线重连 | mvp-roadmap.md 阶段9 | **已完成** | WebSocket 重连 + ICE 重协商 |
+| 服务端录制 | mvp-roadmap.md 阶段9 | 待实现 | 需 Egress 或 SFU 支持 |
+| 语音频道管理 | product-requirements.md 3.3 | **已完成** | 加入/离开语音房间，静音控制 |
 
 ## 三、阶段10：语音转写与总结增强
 

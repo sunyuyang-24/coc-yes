@@ -6,6 +6,7 @@ import type { CharacterCard, DiceRollResult, RoomDetail } from "@coc-yes/shared"
 import { CharacterCardView } from "@/components/character-card-view";
 import { RulesSearchPanel } from "@/components/rules-search-panel";
 import { VoiceRecorder } from "@/components/voice-recorder";
+import { VoiceRoom } from "@/components/voice-room";
 import { VoiceMessage } from "@/components/voice-message";
 import { SummaryPanel } from "@/components/summary-panel";
 import { apiRequest, apiUrl, wsUrl } from "@/lib/api";
@@ -583,6 +584,13 @@ export function RoomConsole() {
             </button>
           </aside>
 
+          {currentMember && (
+            <VoiceRoom
+              roomId={room.id}
+              memberId={memberId || ""}
+              memberName={currentMember.displayName}
+            />
+          )}
           <section className="chat-panel">
             <div className="chat-search-bar">
               <input

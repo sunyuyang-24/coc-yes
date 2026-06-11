@@ -2480,3 +2480,106 @@ select:focus {
 .rolls-log__header-actions .text-button {
   font-size: 1.1rem;
 }
+
+/* ------------------------------------------------------------------ */
+/* Voice Room (WebRTC)
+/* ------------------------------------------------------------------ */
+
+.voice-room {
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: rgba(124, 111, 247, 0.05);
+  border: 1px solid rgba(124, 111, 247, 0.15);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.voice-room__hint {
+  font-size: 1.1rem;
+  color: var(--muted);
+}
+
+.voice-room--active {
+  background: rgba(124, 111, 247, 0.08);
+  border-color: rgba(124, 111, 247, 0.25);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.voice-room__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #b4a7ff;
+}
+
+.voice-room__indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #4caf50;
+  animation: voice-pulse 1.5s infinite;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.voice-room__count {
+  margin-left: auto;
+  font-size: 1rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.voice-room__members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.voice-peer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 1.1rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.voice-peer--speaking {
+  border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.voice-peer--muted {
+  border: 1px solid rgba(255, 152, 0, 0.3);
+  opacity: 0.6;
+}
+
+.voice-peer__name {
+  font-weight: 600;
+}
+
+.voice-peer__status {
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+.voice-room__controls {
+  display: flex;
+  gap: 8px;
+}
+
+.voice-room__controls .button {
+  min-height: 34px;
+  padding: 0 14px;
+  font-size: 1.1rem;
+}

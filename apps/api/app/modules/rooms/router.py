@@ -335,8 +335,31 @@ async def room_socket(websocket: WebSocket, room_id: str, member_id: str) -> Non
     try:
         await websocket.send_json({"type": "room_state", "room": room})
 
+        import json as _json
         while True:
-            await websocket.receive_text()
+            raw = await websocket.receive_text()
+            payload = _json.loads(raw)
+            msg_type = payload.get("type", "")
+
+            # WebRTC signaling relay
+            if msg_type in ("webrtc_offer", "webrtc_answer", "webrtc_ice", "webrtc_mute", "webrtc_unmute", "webrtc_voice_join", "webrtc_voice_leave"):
+                target = payload.get("target")
+                if target:
+                    # Point-to-point signaling
+                    await manager.send_to(room_id, target, {
+                        "type": msg_type,
+                        "from": member_id,
+                        "sdp": payload.get("sdp"),
+                        "candidate": payload.get("candidate"),
+                        "label": payload.get("label"),
+                    })
+                else:
+                    # Broadcast voice status to room
+                    await manager.broadcast(room_id, {
+                        "type": msg_type,
+                        "from": member_id,
+                        "muted": payload.get("muted"),
+                    }, store)
     except WebSocketDisconnect:
         pass
     finally:
@@ -348,3 +371,5 @@ async def room_socket(websocket: WebSocket, room_id: str, member_id: str) -> Non
             return
 
         await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
+        # Notify voice leave
+        await manager.broadcast(room_id, {"type": "webrtc_voice_leave", "from": member_id}, store)
