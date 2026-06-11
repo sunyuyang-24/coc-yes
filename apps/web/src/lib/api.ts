@@ -5,9 +5,10 @@ export function apiUrl(path: string) {
 }
 
 export function wsUrl(path: string) {
-  const base = new URL(API_BASE_URL);
+  // Handle empty/relative API_BASE_URL — derive from current page origin
+  const origin = API_BASE_URL || (typeof window !== "undefined" ? window.location.origin : "http://localhost:3002");
+  const base = new URL(origin);
   base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
-  // 分离 path 中内嵌的查询参数，避免 search="" 清掉
   const qIndex = path.indexOf("?");
   if (qIndex >= 0) {
     base.pathname = path.slice(0, qIndex);

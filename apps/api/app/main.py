@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -5,9 +8,28 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.modules.bootstrap.router import router as bootstrap_router
 from app.modules.health.router import router as health_router
-from app.modules.rooms.router import router as rooms_router, room_socket
+from app.modules.rooms.router import router as rooms_router, room_socket, store
 from app.modules.rules.router import router as rules_router
 from fastapi import WebSocket
+
+
+async def _cleanup_loop():
+    """Periodically remove rooms that have been empty for >30 seconds."""
+    while True:
+        await asyncio.sleep(15)
+        try:
+            removed = store.cleanup_empty_rooms(max_idle_seconds=30)
+            if removed:
+                print(f"[cleanup] removed {removed} empty room(s)")
+        except Exception:
+            pass  # Don't crash the cleanup loop
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(_cleanup_loop())
+    yield
+    task.cancel()
 
 
 def create_app() -> FastAPI:
@@ -16,11 +38,12 @@ def create_app() -> FastAPI:
         version=settings.version,
         description="Online Call of Cthulhu table assistant API.",
         redirect_slashes=False,
+        lifespan=lifespan,
     )
 
     @app.middleware("http")
     async def rate_limit_middleware(request, call_next):
-        # 跳过 WebSocket 和健康检查路由的限流
+        # Skip WebSocket and health check from rate limiting
         if request.url.path.endswith("/ws") or request.url.path == "/api/health":
             return await call_next(request)
         await limiter(request)
@@ -38,8 +61,6 @@ def create_app() -> FastAPI:
     app.include_router(bootstrap_router, prefix="/api", tags=["bootstrap"])
     app.include_router(rooms_router, prefix="/api", tags=["rooms"])
     app.include_router(rules_router, prefix="/api", tags=["rules"])
-
-
 
     @app.websocket("/api/rooms/{room_id}/ws")
     async def ws_room(websocket: WebSocket, room_id: str, member_id: str = ""):

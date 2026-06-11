@@ -915,6 +915,33 @@ class RoomStore:
             room = self._require_room(room_id)
             return deepcopy(room.get("voices", []))
 
+    def cleanup_empty_rooms(self, max_idle_seconds: int = 30) -> int:
+        """Remove rooms that have had zero online members for more than max_idle_seconds.
+        Returns the number of rooms removed."""
+        with self._lock:
+            now = datetime.now(timezone.utc)
+            to_remove = []
+            for room_id, room in self._state.get("rooms", {}).items():
+                has_online = any(m.get("online") for m in room.get("members", []))
+                if has_online:
+                    continue
+                # Check when the room was created/last active
+                created = room.get("createdAt", "")
+                if not created:
+                    continue
+                try:
+                    created_dt = datetime.fromisoformat(created)
+                    idle_seconds = (now - created_dt).total_seconds()
+                except (ValueError, TypeError):
+                    continue
+                if idle_seconds > max_idle_seconds:
+                    to_remove.append(room_id)
+            for rid in to_remove:
+                del self._state["rooms"][rid]
+            if to_remove:
+                self._save()
+            return len(to_remove)
+
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
 
