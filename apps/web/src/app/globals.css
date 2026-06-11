@@ -39,7 +39,7 @@ body {
   font-size: 14px;
   line-height: 1.6;
   color: var(--text);
-  background: var(--bg);
+  background: #000000; background: var(--bg);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -55,7 +55,7 @@ a:hover { color: var(--brand-hover); }
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   height: var(--topbar-h); padding: 0 24px;
-  background: var(--bg); border-bottom: 1px solid var(--border);
+  background: #000000; background: var(--bg); border-bottom: 1px solid var(--border);
 }
 .topbar__brand { display: flex; align-items: center; gap: 10px; }
 .topbar__logo { font-size: 18px; color: var(--brand); }
@@ -501,3 +501,7 @@ html[data-background="sepia"] {
 }
 
 html[data-background="black"] { /* default - inherits :root */ }
+
+
+/* Fallback: any unrecognized data-background defaults to black */
+html:not([data-background]), html[data-background=""] { --bg: #000000; --bg-raised: #0D0D0D; }
