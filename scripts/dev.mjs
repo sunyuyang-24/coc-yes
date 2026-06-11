@@ -64,13 +64,13 @@ function startProcess(name, command, args, cwd) {
 log("system", "═══════════════════════════════════════");
 log("system", "CoC Yes - 在线跑团助手");
 log("system", `后端 API:  http://127.0.0.1:${process.env.API_PORT || "8000"}`);
-log("system", `前端页面:  http://localhost:3000`);
+log("system", `前端页面:  http://localhost:3001`);
 log("system", "按 Ctrl+C 停止所有服务");
 log("system", "═══════════════════════════════════════");
 
 const children = [
   startProcess("api", python, ["-m", "uvicorn", "app.main:app", "--reload", "--host", process.env.API_HOST || "127.0.0.1", "--port", process.env.API_PORT || "8000"], apiDir),
-  startProcess("web", npm, ["--workspace", "apps/web", "run", "dev", "--", "--hostname", "127.0.0.1", "--port", "3000"], ROOT),
+  startProcess("web", npm, ["--workspace", "apps/web", "run", "dev", "--", "--hostname", "127.0.0.1", "--port", "3001"], ROOT),
 ];
 
 function shutdown() {

@@ -78,14 +78,15 @@ coc-yes/
 ```powershell
 npm install
 python -m venv appspi\.venv
-appspi\.venv\Scripts\python.exe -m pip install -r appspiequirements.txt
+appspi\.venv\Scripts\python.exe -m pip install -r appspi
+equirements.txt
 copy .env.example appspi\.env
 copy .env.example apps\web\.env.local
 npm run dev
 ```
 
 启动后访问：
-- 前端页面：http://localhost:3000
+- 前端页面：http://localhost:3001
 - 后端 API：http://127.0.0.1:8000/api/health
 - API 文档：http://127.0.0.1:8000/docs
 
