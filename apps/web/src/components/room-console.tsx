@@ -66,6 +66,8 @@ export function RoomConsole() {
   const [memberId, setMemberId] = useState<string | null>(null);
   const [roomName, setRoomName] = useState("雾港第一夜");
   const [keeperName, setKeeperName] = useState("KP");
+  const [roomPassword, setRoomPassword] = useState("");
+  const [joinPassword, setJoinPassword] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [playerName, setPlayerName] = useState("调查员");
   const [draft, setDraft] = useState("");
@@ -98,6 +100,13 @@ export function RoomConsole() {
     () => room?.members.find((member) => member.id === memberId) ?? null,
     [memberId, room?.members]
   );
+
+  // Apply room theme to document
+  useEffect(() => {
+    if (room?.roomTheme) {
+      document.documentElement.dataset.background = room.roomTheme;
+    }
+  }, [room?.roomTheme]);
 
   useEffect(() => {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -160,7 +169,8 @@ export function RoomConsole() {
       method: "POST",
       body: JSON.stringify({
         name: roomName,
-        keeperName
+        keeperName,
+        password: roomPassword || undefined
       })
     });
 
@@ -176,7 +186,8 @@ export function RoomConsole() {
       method: "POST",
       body: JSON.stringify({
         inviteCode,
-        displayName: playerName
+        displayName: playerName,
+        password: joinPassword || undefined
       })
     });
 
@@ -361,6 +372,10 @@ export function RoomConsole() {
             KP 名称
             <input value={keeperName} onChange={(event) => setKeeperName(event.target.value)} />
           </label>
+          <label>
+            房间密码 <small>（可选，留空则无需密码）</small>
+            <input value={roomPassword} onChange={(e) => setRoomPassword(e.target.value)} placeholder="留空为公开房间" />
+          </label>
           <button className="button button--primary" type="submit">
             创建房间
           </button>
@@ -380,6 +395,10 @@ export function RoomConsole() {
           <label>
             玩家名称
             <input value={playerName} onChange={(event) => setPlayerName(event.target.value)} />
+          </label>
+          <label>
+            房间密码 <small>（如房间设有密码）</small>
+            <input value={joinPassword} onChange={(e) => setJoinPassword(e.target.value)} placeholder="如无密码可留空" />
           </label>
           <button className="button button--ghost" type="submit">
             加入房间
@@ -404,6 +423,28 @@ export function RoomConsole() {
                   当前身份：{currentMember.displayName} · {currentMember.role === "keeper" ? "KP" : "玩家"}
                 </p>
               ) : null}
+              {currentMember?.role === "keeper" && (
+                <div className="room-theme-picker">
+                  <span className="room-theme-label">房间主题</span>
+                  <select
+                    className="room-theme-select"
+                    value={room.roomTheme || "black"}
+                    onChange={async (e) => {
+                      const form = new FormData();
+                      form.append("theme", e.target.value);
+                      form.append("editorId", memberId || "");
+                      await fetch(apiUrl("/api/rooms/" + room.id + "/theme"), { method: "POST", body: form });
+                    }}
+                  >
+                    <option value="black">纯黑</option>
+                    <option value="graphite">深灰</option>
+                    <option value="green">墨绿</option>
+                    <option value="blue">深蓝</option>
+                    <option value="red">暗红</option>
+                    <option value="sepia">羊皮纸</option>
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="member-list">

@@ -101,7 +101,7 @@
 
 | 功能 | 来源 | 说明 |
 |------|------|------|
-| 房间密码 | product-requirements.md 3.1 | 加入房间需密码 |
+| 房间密码 | product-requirements.md 3.1 | **已完成** | 创建时可选密码，加入时验证 |
 | 旁观者身份 | product-requirements.md 3.1 | 只读旁观者 |
 | 多 KP | product-requirements.md 3.1 | 一个房间多 KP |
 | 邀请码使用次数限制 | Agent 审查 (KP) #7 | 可设上限 |
@@ -132,7 +132,7 @@
 |------|------|------|
 | 移动端深度优化 | Agent 审查 (调查员) #11 | **已完成** | <860px 成员栏置顶、composer 固定底部、卡片紧凑 |
 | PWA 支持 | architecture.md | 离线可用、桌面安装 |
-| 房间级主题 | product-requirements.md 3.8 | KP 设置房间主题，同步给所有玩家 |
+| 房间级主题 | product-requirements.md 3.8 | **已完成** | KP 选择 6 种主题色，同步全房间，新增羊皮纸 |
 | 总结导出 | mvp-roadmap.md 阶段10 | **已完成** | 复制到剪贴板 + 下载 .md 文件 |
 | room-console 拆分 | Agent 审查 (KP) #18 | **已完成** | CharacterCardView 拆出为独立组件 |
 

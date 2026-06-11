@@ -16,7 +16,7 @@ class RoomStore:
         self._lock = RLock()
         self._state = self._load()
 
-    def create_room(self, name: str, keeper_name: str) -> tuple[dict, str]:
+    def create_room(self, name: str, keeper_name: str, password: str | None = None, theme: str = "black") -> tuple[dict, str]:
         with self._lock:
             room_id = uuid4().hex[:12]
             keeper_id = uuid4().hex
@@ -45,7 +45,7 @@ class RoomStore:
             self._save()
             return deepcopy(room), keeper_id
 
-    def join_room(self, invite_code: str, display_name: str) -> tuple[dict, str]:
+    def join_room(self, invite_code: str, display_name: str, password: str | None = None) -> tuple[dict, str]:
         with self._lock:
             room = self._find_by_invite(invite_code)
             member_id = uuid4().hex
@@ -65,6 +65,16 @@ class RoomStore:
     def get_room(self, room_id: str) -> dict:
         with self._lock:
             return deepcopy(self._require_room(room_id))
+
+    def set_room_theme(self, room_id: str, theme: str, editor_id: str) -> dict:
+        with self._lock:
+            room = self._require_room(room_id)
+            editor = self._find_member(room, editor_id)
+            if editor["role"] != "keeper":
+                raise PermissionError("Only the Keeper can change room theme")
+            room["roomTheme"] = theme
+            self._save()
+            return deepcopy(room)
 
     def get_room_sanitized(self, room_id: str, member_id: str) -> dict:
         """返回对指定成员过滤后的房间数据。非 KP 成员看不到暗骰细节和私密消息。"""

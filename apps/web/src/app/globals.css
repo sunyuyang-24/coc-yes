@@ -37,6 +37,19 @@ html[data-background="red"] {
   --bg-soft: #2a1011;
 }
 
+html[data-background="sepia"] {
+  --page-bg: #1e1a14;
+  --bg: #1e1a14;
+  --bg-soft: #2a241c;
+  --text: #f0e6d2;
+  --muted: #b8a990;
+  --accent: #d4a853;
+  --accent-ink: #2a1f0a;
+  --panel: rgba(240, 230, 210, 0.08);
+  --panel-strong: rgba(240, 230, 210, 0.14);
+  --line: rgba(240, 230, 210, 0.16);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -2400,4 +2413,37 @@ select:focus {
 .hidden-dice-toggle input {
   width: auto;
   accent-color: #ff8a6b;
+}
+
+/* ------------------------------------------------------------------ */
+/* Room theme picker
+/* ------------------------------------------------------------------ */
+
+.room-theme-picker {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.room-theme-label {
+  font-size: 1.1rem;
+  color: var(--muted);
+}
+
+.room-theme-select {
+  flex: 1;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 1.1rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.room-theme-select option {
+  background: var(--bg-soft);
+  color: var(--text);
 }

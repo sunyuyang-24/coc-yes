@@ -21,7 +21,7 @@ manager = RoomConnectionManager()
 
 @router.post("/rooms")
 async def create_room(payload: CreateRoomRequest) -> dict:
-    room, member_id = store.create_room(payload.name, payload.keeper_name)
+    room, member_id = store.create_room(payload.name, payload.keeper_name, payload.password)
     return {
         "room": room,
         "currentMemberId": member_id,
@@ -31,9 +31,11 @@ async def create_room(payload: CreateRoomRequest) -> dict:
 @router.post("/rooms/join")
 async def join_room(payload: JoinRoomRequest) -> dict:
     try:
-        room, member_id = store.join_room(payload.invite_code, payload.display_name)
+        room, member_id = store.join_room(payload.invite_code, payload.display_name, payload.password)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Invite code not found") from error
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
 
     await manager.broadcast(room["id"], {"type": "room_update", "room": room})
 
@@ -232,6 +234,20 @@ async def activate_room(room_id: str, editor_id: str = Form(..., alias="editorId
         raise HTTPException(status_code=403, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Room or member not found") from error
+
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
+    return {"room": room}
+
+# ---------- Room theme ----------
+
+@router.post("/rooms/{room_id}/theme")
+async def set_room_theme(room_id: str, theme: str = Form("black"), editor_id: str = Form(..., alias="editorId")) -> dict:
+    try:
+        room = store.set_room_theme(room_id, theme, editor_id)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Room or member not found") from error
 

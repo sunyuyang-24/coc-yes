@@ -106,6 +106,8 @@ export type RoomDetail = {
   name: string;
   status: "preparing" | "active" | "ended";
   inviteCode: string;
+  password?: string | null;
+  roomTheme?: "black" | "graphite" | "green" | "blue" | "red" | "sepia";
   createdAt: string;
   members: RoomMember[];
   messages: ChatMessage[];
