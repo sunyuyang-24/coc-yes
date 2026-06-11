@@ -499,3 +499,5 @@ html[data-background="sepia"] {
   .room-board { grid-template-columns: 1fr; }
   .console-card { padding: 20px; }
 }
+
+html[data-background="black"] { /* default - inherits :root */ }

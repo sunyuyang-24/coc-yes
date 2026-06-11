@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -35,12 +35,12 @@ class RoomStore:
                         "online": False,
                     }
                 ],
+                "roomTheme": theme,
                 "messages": [],
                 "rolls": [],
                 "characters": [],
             }
 
-            self._state["rooms"][room_id] = room
             self._add_system_message(room, f"{keeper_name} 创建了房间。")
             self._save()
             return deepcopy(room), keeper_id
