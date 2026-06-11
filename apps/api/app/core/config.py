@@ -17,6 +17,7 @@ class Settings:
     version: str = os.getenv("API_VERSION", "0.1.0")
     data_dir: Path = Path(os.getenv("API_DATA_DIR", str(REPO_ROOT / "data" / "runtime")))
     cors_origins: list[str] = None  # type: ignore[assignment]
+    admin_key: str = os.getenv("API_ADMIN_KEY", "coc-yes-admin")
 
     def __post_init__(self) -> None:
         object.__setattr__(
