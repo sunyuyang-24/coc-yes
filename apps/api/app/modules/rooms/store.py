@@ -126,25 +126,22 @@ class RoomStore:
             return deepcopy(roll_record)
 
     def create_npc(self, room_id: str, keeper_id: str, name: str) -> dict:
+        label_map = {
+            "STR": "力量", "DEX": "敏捷", "POW": "意志",
+            "CON": "体质", "APP": "外貌", "EDU": "教育",
+            "SIZ": "体型", "INT": "智力", "LUCK": "幸运",
+        }
         character = {
             "basic": {"name": name, "occupation": "NPC"},
             "attributes": [
-                {"key": "STR", "label": "??", "value": 50, "half": 25, "fifth": 10},
-                {"key": "DEX", "label": "??", "value": 50, "half": 25, "fifth": 10},
-                {"key": "POW", "label": "??", "value": 50, "half": 25, "fifth": 10},
-                {"key": "CON", "label": "??", "value": 50, "half": 25, "fifth": 10},
-                {"key": "APP", "label": "??", "value": 50, "half": 25, "fifth": 10},
-                {"key": "EDU", "label": "??", "value": 50, "half": 25, "fifth": 10},
-                {"key": "SIZ", "label": "??", "value": 50, "half": 25, "fifth": 10},
-                {"key": "INT", "label": "??", "value": 50, "half": 25, "fifth": 10},
-                {"key": "LUCK", "label": "??", "value": 50, "half": 25, "fifth": 10},
+                {"key": k, "label": v, "value": 50, "half": 25, "fifth": 10}
+                for k, v in label_map.items()
             ],
             "status": {"hp": 10, "san": 50, "mp": 10, "mov": 7, "armor": 0},
             "skills": [
-                {"name": "??(??)", "value": 50, "half": 25, "fifth": 10},
-                {"name": "??", "value": 25, "half": 12, "fifth": 5},
+                {"name": "闪避", "value": 25, "half": 12, "fifth": 5},
             ],
-            "weapons": [{"name": "??", "damage": "1d3", "skill": "??(??)"}],
+            "weapons": [{"name": "拳头", "damage": "1d3", "skill": "拳头/摔跌"}],
             "background": {}, "experiences": [], "spells": [],
             "warnings": [], "sourceFileName": "npc",
         }
