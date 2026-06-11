@@ -1,4 +1,4 @@
-﻿import { spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -30,7 +30,7 @@ function startProcess(name, command, args, cwd) {
   const child = spawn(command, args, {
     cwd: cwd ?? ROOT,
     stdio: "pipe",
-    shell: false,
+    shell: true,
   });
 
   child.stdout.on("data", (d) => process.stdout.write(`${tag(name)} ${d}`));
