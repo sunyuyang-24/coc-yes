@@ -254,7 +254,83 @@ class RoomStore:
 
         raise KeyError("character_not_found")
 
-    def _invite_code(self) -> str:
+
+    def end_room(self, room_id: str, editor_id: str) -> dict:
+        """Mark room as ended and return summary data."""
+        with self._lock:
+            room = self._require_room(room_id)
+            editor = self._find_member(room, editor_id)
+            if editor["role"] != "keeper":
+                raise PermissionError("Only keeper can end the room")
+            room["status"] = "ended"
+            room["endedAt"] = self._now()
+            self._add_system_message(room, f"{editor['displayName']} 结束了本次跑团。")
+            self._save()
+            return deepcopy(room)
+
+    def generate_summary(self, room_id: str) -> dict:
+        """Generate a structured summary from room data."""
+        with self._lock:
+            room = self._require_room(room_id)
+            messages = room.get("messages", [])
+            rolls = room.get("rolls", [])
+            characters = room.get("characters", [])
+            voices = room.get("voices", [])
+
+            # Extract text messages only
+            text_messages = [m for m in messages if m.get("type") in ("text", "system")]
+
+            # Build summary sections
+            summary = {
+                "roomName": room["name"],
+                "status": room["status"],
+                "startedAt": room.get("createdAt", ""),
+                "endedAt": room.get("endedAt", ""),
+                "memberCount": len(room.get("members", [])),
+                "characters": [
+                    {
+                        "name": c.get("basic", {}).get("name") or c.get("sourceFileName", "??"),
+                        "ownerName": c.get("ownerName", "??"),
+                        "occupation": c.get("basic", {}).get("occupation", "????"),
+                        "status": {
+                            attr["key"]: attr["value"]
+                            for attr in c.get("attributes", [])
+                        },
+                        "keeperNotes": c.get("keeperNotes", ""),
+                    }
+                    for c in characters
+                ],
+                "messageCount": len(text_messages),
+                "rollCount": len(rolls),
+                "voiceCount": len(voices),
+                "keyRolls": [
+                    {
+                        "rollerName": r.get("rollerName", ""),
+                        "expression": r.get("expression", ""),
+                        "total": r.get("total"),
+                        "successLabel": r.get("successLabel", ""),
+                        "createdAt": r.get("createdAt", ""),
+                    }
+                    for r in rolls[-20:]  # last 20 rolls
+                ],
+                "draft": "",
+            }
+            return summary
+
+    def save_summary(self, room_id: str, editor_id: str, draft: str) -> dict:
+        """Save the KP-edited summary draft."""
+        with self._lock:
+            room = self._require_room(room_id)
+            editor = self._find_member(room, editor_id)
+            if editor["role"] != "keeper":
+                raise PermissionError("Only keeper can edit the summary")
+            summary = room.setdefault("summary", {})
+            summary["draft"] = draft
+            summary["updatedAt"] = self._now()
+            summary["updatedBy"] = editor["displayName"]
+            self._save()
+            return deepcopy(summary)
+
         alphabet = string.ascii_uppercase + string.digits
         existing = {room["inviteCode"] for room in self._state["rooms"].values()}
 
@@ -263,6 +339,11 @@ class RoomStore:
 
             if code not in existing:
                 return code
+
+    def get_voice_files(self, room_id: str) -> list[dict]:
+        with self._lock:
+            room = self._require_room(room_id)
+            return deepcopy(room.get("voices", []))
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
