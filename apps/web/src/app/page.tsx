@@ -5,25 +5,29 @@ import { RoomConsole } from "@/components/room-console";
 export default function Home() {
   return (
     <main className="shell">
+      {/* ── Top bar ── */}
       <header className="topbar">
-        <span className="topbar__brand">COC Yes</span>
+        <div className="topbar__brand">
+          <span className="topbar__logo">&#x2B21;</span>
+          <span className="topbar__title">CoC Yes</span>
+          <span className="topbar__divider" />
+          <span className="topbar__subtitle">克苏鲁的呼唤跑团助手</span>
+        </div>
         <nav className="topbar__nav">
-          <a href="#rooms">房间</a>
-          <a href="#settings">设置</a>
+          <ApiStatus />
         </nav>
       </header>
 
-      <section id="rooms">
-        <RoomConsole />
-      </section>
+      {/* ── Main content ── */}
+      <div className="layout">
+        <aside className="sidebar">
+          <SettingsPanel />
+        </aside>
 
-      <section id="settings">
-        <SettingsPanel />
-      </section>
-
-      <footer className="footer">
-        <ApiStatus />
-      </footer>
+        <section className="main-area" id="rooms">
+          <RoomConsole />
+        </section>
+      </div>
     </main>
   );
 }
