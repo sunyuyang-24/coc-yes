@@ -14,7 +14,7 @@ export function CharacterCardView({
   canEdit: boolean;
   canRoll: boolean;
   character: CharacterCard;
-  onRoll: (label: string, targetValue: number) => Promise<void>;
+  onRoll: (label: string, targetValue: number, bonusPenalty?: number) => Promise<void>;
   onUpdate: (
     characterId: string,
     basic: Record<string, string>,
@@ -259,7 +259,7 @@ export function CharacterCardView({
                     <button className="inline-roll" onClick={() => {
                       const sn = String(w.skill || "");
                       const sk = character.skills.find(s => s.name === sn);
-                      if (sk?.value) onRoll(name + " · " + sn, sk.value);
+                      if (sk?.value) onRoll(name + " · " + sn, sk.value, 0);
                     }} type="button">投掷</button>
                   )}
                 </div>

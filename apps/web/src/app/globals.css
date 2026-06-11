@@ -2110,3 +2110,94 @@ select:focus {
   color: var(--muted);
   font-size: 1.2rem;
 }
+
+/* ------------------------------------------------------------------ */
+/* Inline roll bonus dice select
+/* ------------------------------------------------------------------ */
+
+.inline-roll-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inline-roll-bonus {
+  padding: 2px 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 1rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.inline-roll-bonus:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Skill categories
+/* ------------------------------------------------------------------ */
+
+.skill-category {
+  margin-bottom: 10px;
+}
+
+.skill-category:last-child {
+  margin-bottom: 0;
+}
+
+.skill-category__title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 0 0 4px;
+  padding: 2px 6px;
+  background: rgba(213, 255, 119, 0.06);
+  border-radius: 4px;
+  display: inline-block;
+}
+
+/* ------------------------------------------------------------------ */
+/* Multi character cards
+/* ------------------------------------------------------------------ */
+
+.character-card--inactive {
+  opacity: 0.55;
+}
+
+.character-card--inactive:hover {
+  opacity: 0.85;
+}
+
+.multi-char-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.multi-char-bar--active {
+  background: rgba(213, 255, 119, 0.06);
+  border-bottom-color: rgba(213, 255, 119, 0.15);
+}
+
+.multi-char-indicator {
+  font-size: 1.05rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.multi-char-bar--active .multi-char-indicator {
+  color: var(--accent);
+}
+
+.multi-char-count {
+  font-size: 1rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}

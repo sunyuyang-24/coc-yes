@@ -79,6 +79,7 @@ export type CharacterCard = {
   warnings: string[];
   keeperNotes: string;
   lockedFields?: string[];
+  active?: boolean;
   history?: Array<{ editorId: string; editorName: string; timestamp: string; changes: Record<string, unknown>; }>;
   createdAt: string;
   updatedAt: string;

@@ -577,17 +577,27 @@ export function RoomConsole() {
         <section className="character-shelf">
           {room.characters.map((character) => {
             const isNPC = character.basic.occupation === "NPC" || character.sourceFileName === "npc";
+            const isOwner = character.ownerId === memberId;
+            const ownerChars = room.characters?.filter(c => c.ownerId === character.ownerId) || [];
+            const hasMulti = ownerChars.length > 1;
+            const isActive = character.active !== false;
             return (
-              <div key={character.id} className={isNPC ? "character-card--npc-wrapper" : undefined}>
+              <div key={character.id} className={(isNPC ? "character-card--npc-wrapper" : "") + (hasMulti && !isActive ? " character-card--inactive" : "")}>
                 {isNPC && (
                   <div className="npc-card-header">
                     <span className="npc-badge">NPC</span>
                     <span className="npc-name">{character.basic.name || "NPC"}</span>
                   </div>
                 )}
+                {hasMulti && !isNPC && isOwner && (
+                  <div className={"multi-char-bar" + (isActive ? " multi-char-bar--active" : "")}>
+                    <span className="multi-char-indicator">{isActive ? "当前角色" : "备用角色"}</span>
+                    <span className="multi-char-count">{ownerChars.findIndex(c => c.id === character.id) + 1}/{ownerChars.length}</span>
+                  </div>
+                )}
                 <CharacterCardView
                   canEdit={currentMember?.role === "keeper"}
-                  canRoll={Boolean(currentMember)}
+                  canRoll={Boolean(currentMember) && isActive}
                   character={character}
                   onRoll={rollCharacterCheck}
                   onUpdate={updateCharacter}
