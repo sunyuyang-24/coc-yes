@@ -78,7 +78,7 @@ export function ChasePanel({ roomId, memberId, chase, characters, isKeeper, onCl
                   {atPos.map((p) => {
                     const char = characters.find((c) => c.id === p.characterId);
                     return (
-                      <div key={p.characterId}
+                      <div key={p.memberId}
                         className={`chase__participant chase__participant--${p.role}`}
                         title={`${char?.basic?.name || p.displayName} MOV ${p.mov}`}>
                         {char?.basic?.name?.charAt(0) || p.displayName.charAt(0)}
@@ -95,7 +95,7 @@ export function ChasePanel({ roomId, memberId, chase, characters, isKeeper, onCl
             {chase.participants.map((p) => {
               const char = characters.find((c) => c.id === p.characterId);
               return (
-                <div key={p.characterId} className="chase__list-item">
+                <div key={p.memberId} className="chase__list-item">
                   <span className={`chase__role-badge chase__role-badge--${p.role}`}>
                     {p.role === "pursuer" ? "追" : "逃"}
                   </span>

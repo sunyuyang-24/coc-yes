@@ -41,6 +41,7 @@ class RoomStore:
                 "characters": [],
             }
 
+            self._state["rooms"][room_id] = room
             self._add_system_message(room, f"{keeper_name} 创建了房间。")
             self._save()
             return deepcopy(room), keeper_id
@@ -676,7 +677,7 @@ class RoomStore:
                 defender_skills = defender_char.get("skills", [])
                 fight_value = 25
                 for sk in defender_skills:
-                    if sk.get("name") in ("格斗(斗殴)", "格斗(斗殴)"):
+                    if sk.get("name") in ("格斗(斗殴)", "格斗(斗殴)", "格斗", "斗殴"):
                         fight_value = sk.get("value") or 25
                         break
                 defend_roll = roll_dice("1d100", target_value=fight_value, bonus_penalty=0)
