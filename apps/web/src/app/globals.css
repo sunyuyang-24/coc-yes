@@ -1733,8 +1733,8 @@ select:focus {
 
 @media (max-width: 860px) {
   .shell {
-    width: min(100% - 28px, 720px);
-    padding-top: 24px;
+    width: min(100% - 16px, 720px);
+    padding: 16px 0 80px;
   }
 
   .hero,
@@ -1752,11 +1752,11 @@ select:focus {
 
   .hero {
     min-height: auto;
-    padding: 58px 0 28px;
+    padding: 40px 0 20px;
   }
 
   h1 {
-    font-size: clamp(3.2rem, 18vw, 5.2rem);
+    font-size: clamp(2.4rem, 12vw, 4rem);
   }
 
   .table-card {
@@ -1769,6 +1769,91 @@ select:focus {
 
   .attribute-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* Mobile member rail as top bar */
+  .member-rail {
+    max-height: none;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg);
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .member-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .member-item {
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 1.15rem;
+  }
+
+  /* Composer fixed at bottom */
+  .composer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 8px 10px;
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+    z-index: 10;
+  }
+
+  .chat-log {
+    padding-bottom: 60px;
+  }
+
+  /* Dice panel compact */
+  .dice-panel, .hidden-dice-panel, .upload-panel, .npc-panel {
+    padding: 12px;
+  }
+
+  .dice-panel h3, .hidden-dice-panel h3 {
+    font-size: 1.4rem;
+  }
+
+  /* Character card compact */
+  .character-card {
+    padding: 14px;
+  }
+
+  .character-card h2 {
+    font-size: 1.8rem;
+  }
+
+  .character-shelf {
+    grid-template-columns: 1fr;
+  }
+
+  /* Settings compact */
+  .settings-panel {
+    padding: 16px;
+  }
+
+  /* Rolls log compact */
+  .rolls-log__item {
+    font-size: 1.15rem;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Rules panel */
+  .rules-shelf {
+    padding: 12px;
+  }
+
+  /* Summary */
+  .summary-panel__stats {
+    flex-wrap: wrap;
+    gap: 8px;
   }
 }
 
@@ -2266,4 +2351,53 @@ select:focus {
   background: rgba(213, 255, 119, 0.1);
   padding: 0 2px;
   border-radius: 2px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Hidden dice panel (KP only)
+/* ------------------------------------------------------------------ */
+
+.hidden-dice-panel {
+  padding: 14px;
+  margin-top: 12px;
+  background: rgba(255, 138, 107, 0.04);
+  border: 1px solid rgba(255, 138, 107, 0.15);
+  border-radius: 12px;
+}
+
+.hidden-dice-panel h3 {
+  font-size: 1.4rem;
+  margin: 4px 0 8px;
+  color: #ff8a6b;
+}
+
+.hidden-dice-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: 1.15rem;
+  color: var(--muted);
+}
+
+.hidden-dice-panel input {
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 138, 107, 0.2);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 1.2rem;
+}
+
+.hidden-dice-toggle {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.1rem !important;
+  color: #ff8a6b !important;
+}
+
+.hidden-dice-toggle input {
+  width: auto;
+  accent-color: #ff8a6b;
 }

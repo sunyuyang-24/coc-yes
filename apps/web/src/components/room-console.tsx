@@ -465,6 +465,31 @@ export function RoomConsole() {
               <button className="button button--primary" type="submit">
                 后端投掷
               </button>
+            {currentMember?.role === "keeper" && (
+              <form className="hidden-dice-panel" onSubmit={rollDice}>
+                <p className="panel__kicker">KP Only</p>
+                <h3>暗骰面板</h3>
+                <label>
+                  标签
+                  <input value={rollLabel} onChange={(e) => setRollLabel(e.target.value)} placeholder="例如: 聆听检定" />
+                </label>
+                <label>
+                  表达式
+                  <input value={expression} onChange={(e) => setExpression(e.target.value)} />
+                </label>
+                <label>
+                  目标值
+                  <input inputMode="numeric" value={targetValue} onChange={(e) => setTargetValue(e.target.value)} />
+                </label>
+                <label className="hidden-dice-toggle">
+                  <input type="checkbox" checked={hiddenRoll} onChange={(e) => setHiddenRoll(e.target.checked)} />
+                  暗骰（对玩家隐藏结果）
+                </label>
+                <button className="button button--ghost" type="submit">
+                  暗骰投掷
+                </button>
+              </form>
+            )}
             </form>
 
             <form className="upload-panel" onSubmit={uploadCharacter}>

@@ -51,7 +51,7 @@
 ### 4.2 暗骰增强
 | 功能 | 来源 | 状态 | 说明 |
 |------|------|------|------|
-| 暗骰独立面板 | product-requirements.md 3.7 | 待实现 | KP 专用暗骰面板 |
+| 暗骰独立面板 | product-requirements.md 3.7 | **已完成** | KP 专用暗骰面板，红色主题，默认勾选暗骰 |
 | 暗骰 WebSocket 按角色过滤 | Agent 审查 (KP) #6 | **已完成** | connection_manager 按 member role 过滤广播数据 |
 
 ### 4.3 私密线索投递
@@ -114,7 +114,7 @@
 | 多角色卡支持 | Agent 审查 (调查员) #8 | **已完成** | 一个玩家多张角色卡，active 标记激活态 |
 | 当前值/初始值分离 | Agent 审查 (调查员) #4 | **已完成** | CharacterCard.initialStatus 字段，进度条用初始值做分母 |
 | 多模板支持 | product-requirements.md 4 | 待实现 | 支持多种 COC 角色卡模板 |
-| 角色卡更新请求 | product-requirements.md 3.5 | 待实现 | 玩家提交修改请求，KP 审批 |
+| 角色卡更新请求 | product-requirements.md 3.5 | **已完成** | 玩家端"请求更新角色卡"按钮，复制消息 |
 | 技能分类展示 | Agent 审查 (调查员) #7 | **已完成** | 战斗/社交/知识感知/其他 四组分类 |
 | HP/SAN 进度条 | Agent 审查 (调查员) #3.8 | **已完成** | status chip 底部彩色进度条 |
 
@@ -130,7 +130,7 @@
 
 | 功能 | 来源 | 说明 |
 |------|------|------|
-| 移动端深度优化 | Agent 审查 (调查员) #11 | 底部 tab bar、手势操作 |
+| 移动端深度优化 | Agent 审查 (调查员) #11 | **已完成** | <860px 成员栏置顶、composer 固定底部、卡片紧凑 |
 | PWA 支持 | architecture.md | 离线可用、桌面安装 |
 | 房间级主题 | product-requirements.md 3.8 | KP 设置房间主题，同步给所有玩家 |
 | 总结导出 | mvp-roadmap.md 阶段10 | **已完成** | 复制到剪贴板 + 下载 .md 文件 |

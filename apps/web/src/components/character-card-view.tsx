@@ -105,6 +105,16 @@ export function CharacterCardView({
             KP 编辑
           </button>
         </div>
+      ) : !canEdit && canRoll ? (
+        <div className="character-actions">
+          <button className="text-button" onClick={() => {
+            const msg = "请求修改角色卡: " + name;
+            navigator.clipboard.writeText(msg).catch(() => {});
+            alert("已复制到剪贴板，请向 KP 发送: " + msg);
+          }} type="button">
+            ✎ 请求更新角色卡
+          </button>
+        </div>
       ) : null}
 
       {editing ? (
