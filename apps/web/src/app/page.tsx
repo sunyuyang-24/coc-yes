@@ -1,5 +1,5 @@
 import { ApiStatus } from "@/components/api-status";
-import { BackgroundPicker } from "@/components/background-picker";
+import { SettingsPanel } from "@/components/settings-panel";
 import { RoomConsole } from "@/components/room-console";
 import { BUILD_PHASES, CORE_MODULES } from "@coc-yes/shared";
 
@@ -48,7 +48,7 @@ export default function Home() {
 
       <section className="status-grid" id="status">
         <ApiStatus />
-        <BackgroundPicker />
+        <SettingsPanel />
         <article className="panel">
           <p className="panel__kicker">Project Shape</p>
           <h2>前后端已经分层</h2>

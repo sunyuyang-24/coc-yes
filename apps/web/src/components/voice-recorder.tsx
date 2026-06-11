@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { loadSettings, type UserSettings } from "@/components/settings-panel";
 import { apiUrl } from "@/lib/api";
 
 type Props = {
@@ -15,9 +16,12 @@ export function VoiceRecorder({ roomId, memberId, onSent }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const maxDurationRef = useRef(0);
 
   const startRecording = useCallback(async () => {
     try {
+      const s = loadSettings();
+      maxDurationRef.current = s.voiceMaxDuration;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream, {
         mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -44,6 +48,12 @@ export function VoiceRecorder({ roomId, memberId, onSent }: Props) {
       timerRef.current = setInterval(() => {
         setElapsed((prev) => {
           const next = prev + 1;
+          const limit = maxDurationRef.current;
+          if (limit > 0 && next >= limit) {
+            mediaRecorderRef.current?.stop();
+            if (timerRef.current) clearInterval(timerRef.current);
+            return limit;
+          }
           return next;
         });
       }, 1000);
