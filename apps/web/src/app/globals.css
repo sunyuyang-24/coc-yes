@@ -2052,3 +2052,24 @@ select:focus {
   border-top-right-radius: 0;
   border-color: rgba(100, 149, 237, 0.2);
 }
+
+/* ------------------------------------------------------------------ */
+/* Roll card search button
+/* ------------------------------------------------------------------ */
+
+.roll-card__search-btn {
+  margin-top: 6px;
+  padding: 3px 10px;
+  background: rgba(213, 255, 119, 0.1);
+  border: 1px solid rgba(213, 255, 119, 0.25);
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 1.1rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.roll-card__search-btn:hover {
+  background: rgba(213, 255, 119, 0.2);
+}
