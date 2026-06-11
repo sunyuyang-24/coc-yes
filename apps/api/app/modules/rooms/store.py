@@ -450,14 +450,439 @@ class RoomStore:
             self._save()
             return deepcopy(summary)
 
-        alphabet = string.ascii_uppercase + string.digits
-        existing = {room["inviteCode"] for room in self._state["rooms"].values()}
+    # ── Module Intro ──
 
-        while True:
-            code = "".join(secrets.choice(alphabet) for _ in range(6))
+    def update_module_intro(self, room_id: str, editor_id: str, intro: str) -> dict:
+        with self._lock:
+            room = self._require_room(room_id)
+            editor = self._find_member(room, editor_id)
+            if editor["role"] != "keeper":
+                raise PermissionError("Only keeper can edit module intro")
+            room["moduleIntro"] = intro
+            self._add_system_message(room, f"{editor['displayName']} 更新了模组简介。")
+            self._save()
+            return deepcopy(room)
 
-            if code not in existing:
-                return code
+    # ── SAN Check ──
+
+    def san_check_roll(self, room_id: str, roller_id: str, character_id: str,
+                       success_loss: str, failure_loss: str, hidden: bool) -> dict:
+        from app.modules.dice.roller import roll_dice
+        with self._lock:
+            room = self._require_room(room_id)
+            roller = self._find_member(room, roller_id)
+            character = self._find_character(room, character_id)
+            current_san = (character.get("status") or {}).get("san") or 0
+
+            # Roll 1d100 vs current SAN
+            dice_result = roll_dice("1d100", target_value=current_san, bonus_penalty=0)
+            success_level = dice_result.get("successLevel")
+            is_success = success_level in ("critical", "extreme", "hard", "regular")
+
+            # Parse loss expression
+            loss_expr = success_loss if is_success else failure_loss
+            loss_amount = self._parse_loss(loss_expr)
+
+            # Update character SAN
+            new_san = max(0, current_san - loss_amount)
+            character.setdefault("status", {})["san"] = new_san
+
+            # Record result
+            loss_str = f"{success_loss if is_success else failure_loss} → SAN -{loss_amount}"
+            label = f"{character.get('basic', {}).get('name', '??')} SAN CHECK (当前SAN={current_san})"
+            dice_result["label"] = label
+            dice_result["hidden"] = hidden
+
+            roll_record = self.add_dice_roll(room_id, roller_id, dice_result)
+
+            # Build SAN check result info
+            result = {
+                **roll_record,
+                "characterId": character_id,
+                "characterName": character.get("basic", {}).get("name", ""),
+                "currentSan": current_san,
+                "newSan": new_san,
+                "sanLost": loss_amount,
+                "lossParams": f"{success_loss}/{failure_loss}",
+                "isSuccess": is_success,
+                "triggersInsanity": loss_amount >= 5,
+            }
+
+            # System message for SAN change
+            self._add_system_message(
+                room,
+                f"{character.get('basic', {}).get('name', '??')} SAN CHECK "
+                f"{'成功' if is_success else '失败'}，SAN {current_san} → {new_san} "
+                f"({'-' if loss_amount > 0 else ''}{loss_amount})"
+                + (" [触发临时疯狂检定]" if loss_amount >= 5 else "")
+            )
+
+            self._save()
+            return result
+
+    def _parse_loss(self, expr: str) -> int:
+        """Parse a SAN loss expression like '1', '1D6', '1D4+1' and return the rolled value."""
+        import re
+        from app.modules.dice.roller import roll_dice
+        expr = expr.strip().upper()
+        if re.match(r'^\d+$', expr):
+            return int(expr)
+        # Use the dice roller for expressions like 1D6, 2D10+1, etc.
+        result = roll_dice(expr)
+        return result["total"]
+
+    # ── Combat ──
+
+    def _compute_db(self, str_val: int, siz_val: int) -> tuple:
+        total = str_val + siz_val
+        if total <= 64: return ("-2", -2)
+        if total <= 84: return ("-1", -1)
+        if total <= 124: return ("0", 0)
+        if total <= 164: return ("+1D4", 1)
+        if total <= 204: return ("+1D6", 2)
+        if total <= 284: return ("+2D6", 3)
+        if total <= 364: return ("+3D6", 4)
+        return ("+4D6", 5)
+
+    def start_combat(self, room_id: str, editor_id: str) -> dict:
+        with self._lock:
+            room = self._require_room(room_id)
+            editor = self._find_member(room, editor_id)
+            if editor["role"] != "keeper":
+                raise PermissionError("Only keeper can start combat")
+
+            actors = []
+            for member in room["members"]:
+                if member["role"] == "spectator":
+                    continue
+                char = next((c for c in room.get("characters", [])
+                           if c.get("ownerId") == member["id"] and c.get("active") is not False), None)
+                if not char:
+                    continue
+                attrs = {a["key"]: (a["value"] or 50) for a in char.get("attributes", [])}
+                dex = attrs.get("DEX", 50)
+                db, build = self._compute_db(attrs.get("STR", 50), attrs.get("SIZ", 50))
+                status = char.get("status") or {}
+                actors.append({
+                    "memberId": member["id"],
+                    "characterId": char["id"],
+                    "displayName": char.get("basic", {}).get("name") or member["displayName"],
+                    "dex": dex,
+                    "hp": status.get("hp") or 0,
+                    "hpMax": (char.get("initialStatus") or {}).get("hp") or status.get("hp") or 10,
+                    "db": db,
+                    "build": build,
+                    "hasActedThisRound": False,
+                })
+
+            actors.sort(key=lambda a: a["dex"], reverse=True)
+
+            combat_state = {
+                "active": True,
+                "roundNumber": 1,
+                "actors": actors,
+                "currentActorIndex": 0,
+                "createdAt": self._now(),
+            }
+            room["combatState"] = combat_state
+            self._add_system_message(room, f"{editor['displayName']} 开始了战斗轮次！Round 1")
+            self._save()
+            return deepcopy(combat_state)
+
+    def get_combat_state(self, room_id: str) -> dict | None:
+        with self._lock:
+            room = self._require_room(room_id)
+            cs = room.get("combatState")
+            return deepcopy(cs) if cs else None
+
+    def act_combat(self, room_id: str, attacker_id: str, weapon_index: int,
+                   defender_id: str, action_type: str, hidden: bool) -> dict:
+        from app.modules.dice.roller import roll_dice, opposed_check
+        with self._lock:
+            room = self._require_room(room_id)
+            cs = room.get("combatState")
+            if not cs or not cs.get("active"):
+                raise ValueError("No active combat round")
+
+            actors = cs["actors"]
+            current_idx = cs["currentActorIndex"]
+            if current_idx >= len(actors):
+                raise ValueError("Combat round already ended")
+
+            current_actor = actors[current_idx]
+            if current_actor["memberId"] != attacker_id:
+                raise ValueError("Not your turn")
+
+            attacker_char = self._find_character(room, current_actor["characterId"])
+            defender_actor = next((a for a in actors if a["memberId"] == defender_id), None)
+            if not defender_actor:
+                raise ValueError("Target not found in combat")
+            defender_char = self._find_character(room, defender_actor["characterId"])
+
+            # Get weapon info
+            weapons = attacker_char.get("weapons", [])
+            weapon = weapons[weapon_index] if 0 <= weapon_index < len(weapons) else None
+            weapon_name = weapon.get("name", "徒手") if weapon else "徒手"
+            weapon_damage = str(weapon.get("damage", "1D3")) if weapon else "1D3"
+            weapon_skill_name = str(weapon.get("skill", "格斗(斗殴)")) if weapon else "格斗(斗殴)"
+
+            # Find attacker's skill value for this weapon
+            attacker_skills = attacker_char.get("skills", [])
+            skill_value = 50  # default
+            for sk in attacker_skills:
+                if sk.get("name") == weapon_skill_name:
+                    skill_value = sk.get("value") or 50
+                    break
+
+            # Roll attacker's attack
+            attack_roll = roll_dice("1d100", target_value=skill_value, bonus_penalty=0)
+
+            # Defender action
+            if action_type == "dodge":
+                defender_skills = defender_char.get("skills", [])
+                dodge_value = 25
+                for sk in defender_skills:
+                    if sk.get("name") == "闪避":
+                        dodge_value = sk.get("value") or 25
+                        break
+                defend_roll = roll_dice("1d100", target_value=dodge_value, bonus_penalty=0)
+                # Opposed: attack vs dodge
+                winner = opposed_check(attack_roll["total"], skill_value,
+                                      defend_roll["total"], dodge_value)
+                attacker_wins = winner.get("winner") == "actor"
+                if attacker_wins:
+                    # Apply damage
+                    damage = self._calc_damage(weapon_damage, current_actor["db"],
+                                              attack_roll.get("successLevel"))
+                    new_hp = max(0, defender_actor["hp"] - damage)
+                    defender_actor["hp"] = new_hp
+                    defender_char.setdefault("status", {})["hp"] = new_hp
+                    self._add_system_message(room,
+                        f"⚔️ {current_actor['displayName']} 用{weapon_name}攻击"
+                        f"{defender_actor['displayName']}（{defend_roll['total']}/{dodge_value} 闪避失败），"
+                        f"造成 {damage} 点伤害！HP {defender_actor['hp']}")
+                    # Check major wound
+                    if damage >= defender_actor["hpMax"] // 2:
+                        self._add_system_message(room,
+                            f"💀 {defender_actor['displayName']} 受到重伤！")
+                else:
+                    self._add_system_message(room,
+                        f"💨 {defender_actor['displayName']} 闪避了 {current_actor['displayName']} 的攻击"
+                        f"（{defend_roll['total']}/{dodge_value}）")
+            else:
+                # Fight back or maneuver
+                defender_skills = defender_char.get("skills", [])
+                fight_value = 25
+                for sk in defender_skills:
+                    if sk.get("name") in ("格斗(斗殴)", "格斗(斗殴)"):
+                        fight_value = sk.get("value") or 25
+                        break
+                defend_roll = roll_dice("1d100", target_value=fight_value, bonus_penalty=0)
+                winner = opposed_check(attack_roll["total"], skill_value,
+                                      defend_roll["total"], fight_value)
+                attacker_wins = winner.get("winner") == "actor"
+                if attacker_wins:
+                    damage = self._calc_damage(weapon_damage, current_actor["db"],
+                                              attack_roll.get("successLevel"))
+                    new_hp = max(0, defender_actor["hp"] - damage)
+                    defender_actor["hp"] = new_hp
+                    defender_char.setdefault("status", {})["hp"] = new_hp
+                    self._add_system_message(room,
+                        f"⚔️ {current_actor['displayName']} 用{weapon_name}攻击"
+                        f"{defender_actor['displayName']}，造成 {damage} 点伤害！HP → {new_hp}")
+                    if damage >= defender_actor["hpMax"] // 2:
+                        self._add_system_message(room,
+                            f"💀 {defender_actor['displayName']} 受到重伤！")
+                else:
+                    self._add_system_message(room,
+                        f"🛡️ {defender_actor['displayName']} 反击了 {current_actor['displayName']} 的攻击")
+
+            # Mark current actor as acted
+            current_actor["hasActedThisRound"] = True
+
+            # Record the dice roll
+            atk_sl = attack_roll.get("successLevel")
+            roll_record = {
+                "expression": "1d100",
+                "total": attack_roll["total"],
+                "breakdown": attack_roll.get("breakdown", []),
+                "targetValue": skill_value,
+                "bonusPenalty": 0,
+                "successLevel": atk_sl,
+                "successLabel": attack_roll.get("successLabel"),
+                "isSuccess": atk_sl in ("critical", "extreme", "hard", "regular"),
+                "hidden": hidden,
+                "label": f"⚔️ {current_actor['displayName']} {weapon_name} → {defender_actor['displayName']}",
+            }
+            self.add_dice_roll(room_id, attacker_id, roll_record)
+
+            # Advance initiative
+            cs["currentActorIndex"] += 1
+            if cs["currentActorIndex"] >= len(actors):
+                # Next round
+                cs["roundNumber"] += 1
+                cs["currentActorIndex"] = 0
+                for a in actors:
+                    a["hasActedThisRound"] = False
+                self._add_system_message(room, f"🔄 Round {cs['roundNumber']} 开始！")
+
+            self._save()
+            return deepcopy(cs)
+
+    def _calc_damage(self, weapon_damage: str, db: str, success_level: str | None) -> int:
+        from app.modules.dice.roller import roll_dice
+        wd = roll_dice(weapon_damage)["total"]
+        db_val = roll_dice(db)["total"] if db and db not in ("0", "-1", "-2") else (
+            int(db) if db and db.lstrip('-').isdigit() else 0)
+        # Extreme success = max damage
+        if success_level == "extreme":
+            max_wd = self._max_damage(weapon_damage)
+            max_db_val = self._max_damage(db) if db and db not in ("0", "-1", "-2") else 0
+            return max_wd + max_db_val + wd  # impale rule
+        return max(0, wd + db_val)
+
+    def _max_damage(self, expr: str) -> int:
+        import re
+        m = re.match(r'(\d*)[dD](\d+)\s*([+-]\s*\d+)?', expr.strip())
+        if not m:
+            return 0
+        count = int(m.group(1)) if m.group(1) else 1
+        sides = int(m.group(2))
+        modifier = int(m.group(3).replace(' ', '')) if m.group(3) else 0
+        return count * sides + modifier
+
+    def end_combat(self, room_id: str, editor_id: str) -> dict:
+        with self._lock:
+            room = self._require_room(room_id)
+            editor = self._find_member(room, editor_id)
+            if editor["role"] != "keeper":
+                raise PermissionError("Only keeper can end combat")
+            if "combatState" in room:
+                del room["combatState"]
+            self._add_system_message(room, f"{editor['displayName']} 结束了战斗轮次。")
+            self._save()
+            return deepcopy(room)
+
+    # ── Chase ──
+
+    def start_chase(self, room_id: str, editor_id: str) -> dict:
+        with self._lock:
+            room = self._require_room(room_id)
+            editor = self._find_member(room, editor_id)
+            if editor["role"] != "keeper":
+                raise PermissionError("Only keeper can start chase")
+
+            participants = []
+            for member in room["members"]:
+                if member["role"] == "spectator":
+                    continue
+                char = next((c for c in room.get("characters", [])
+                           if c.get("ownerId") == member["id"] and c.get("active") is not False), None)
+                mov = (char.get("status") or {}).get("mov") or 7 if char else 7
+                participants.append({
+                    "memberId": member["id"],
+                    "characterId": char["id"] if char else "",
+                    "displayName": char.get("basic", {}).get("name") if char else member["displayName"],
+                    "mov": mov,
+                    "role": "fugitive" if member["role"] != "keeper" else "pursuer",
+                    "position": 2 if member["role"] != "keeper" else 0,
+                })
+
+            chase_state = {
+                "active": True,
+                "participants": participants,
+                "obstacles": [],
+                "createdAt": self._now(),
+            }
+            room["chaseState"] = chase_state
+            self._add_system_message(room, f"{editor['displayName']} 开始了追逐轮次！")
+            self._save()
+            return deepcopy(chase_state)
+
+    def get_chase_state(self, room_id: str) -> dict | None:
+        with self._lock:
+            room = self._require_room(room_id)
+            cs = room.get("chaseState")
+            return deepcopy(cs) if cs else None
+
+    def act_chase(self, room_id: str, participant_id: str, action_type: str,
+                  weapon_index: int | None, hidden: bool) -> dict:
+        from app.modules.dice.roller import roll_dice
+        with self._lock:
+            room = self._require_room(room_id)
+            cs = room.get("chaseState")
+            if not cs or not cs.get("active"):
+                raise ValueError("No active chase")
+
+            participant = next((p for p in cs["participants"]
+                               if p["memberId"] == participant_id), None)
+            if not participant:
+                raise ValueError("Participant not found")
+
+            if action_type == "speed_check":
+                # CON roll to adjust MOV
+                member = self._find_member(room, participant_id)
+                char = next((c for c in room.get("characters", [])
+                           if c.get("ownerId") == participant_id), None)
+                con_value = 50
+                if char:
+                    for attr in char.get("attributes", []):
+                        if attr.get("key") == "CON":
+                            con_value = attr.get("value") or 50
+                            break
+                result = roll_dice("1d100", target_value=con_value, bonus_penalty=0)
+                sl = result.get("successLevel")
+                if sl in ("critical", "extreme", "hard", "regular"):
+                    if result.get("successLevel") == "extreme":
+                        participant["mov"] += 1
+                else:
+                    participant["mov"] = max(1, participant["mov"] - 1)
+
+                roll_record = {
+                    "expression": "1d100", "total": result["total"],
+                    "breakdown": result.get("breakdown", []),
+                    "targetValue": con_value, "bonusPenalty": 0,
+                    "successLevel": result.get("successLevel"),
+                    "successLabel": result.get("successLabel"),
+                    "isSuccess": sl in ("critical", "extreme", "hard", "regular"),
+                    "hidden": hidden,
+                    "label": f"🏃 {participant['displayName']} 速度检定 CON={con_value} MOV={participant['mov']}",
+                }
+                self.add_dice_roll(room_id, participant_id, roll_record)
+
+            elif action_type == "maneuver":
+                participant["position"] += participant.get("mov", 7)
+                self._add_system_message(room,
+                    f"🏃 {participant['displayName']} 移动到位置 {participant['position']}")
+
+            elif action_type == "conflict":
+                result = roll_dice("1d100")
+                sl = result.get("successLevel")
+                roll_record = {
+                    "expression": "1d100", "total": result["total"],
+                    "breakdown": result.get("breakdown", []),
+                    "targetValue": None, "bonusPenalty": 0,
+                    "successLevel": sl, "successLabel": None,
+                    "isSuccess": sl in ("critical", "extreme", "hard", "regular") if sl else None,
+                    "hidden": hidden,
+                    "label": f"💥 {participant['displayName']} 追逐冲突检定",
+                }
+                self.add_dice_roll(room_id, participant_id, roll_record)
+
+            self._save()
+            return deepcopy(cs)
+
+    def end_chase(self, room_id: str, editor_id: str) -> dict:
+        with self._lock:
+            room = self._require_room(room_id)
+            editor = self._find_member(room, editor_id)
+            if editor["role"] != "keeper":
+                raise PermissionError("Only keeper can end chase")
+            if "chaseState" in room:
+                del room["chaseState"]
+            self._add_system_message(room, f"{editor['displayName']} 结束了追逐轮次。")
+            self._save()
+            return deepcopy(room)
 
     def add_voice_message(self, room_id: str, sender_id: str, voice_record: dict) -> dict:
         """添加语音消息到房间。同时添加到 messages 列表和 voices 列表。"""

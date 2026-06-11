@@ -113,6 +113,88 @@ export type RoomDetail = {
   messages: ChatMessage[];
   rolls?: DiceRollResult[];
   characters?: CharacterCard[];
+  moduleIntro?: string | null;
+  combatState?: CombatState | null;
+  chaseState?: ChaseState | null;
+};
+
+// ── Structured Checks ──
+
+export type CheckRequest = {
+  characterId: string;
+  skillName?: string;
+  attributeKey?: string;
+  difficulty: "regular" | "hard" | "extreme";
+  hidden: boolean;
+};
+
+export type SanCheckRequest = {
+  characterId: string;
+  successLoss: string;
+  failureLoss: string;
+  hidden: boolean;
+};
+
+// ── Combat ──
+
+export type CombatActor = {
+  memberId: string;
+  characterId: string;
+  displayName: string;
+  dex: number;
+  hp: number;
+  hpMax: number;
+  db: string;
+  build: number;
+  hasActedThisRound: boolean;
+};
+
+export type CombatActionRequest = {
+  attackerId: string;
+  weaponIndex: number;
+  defenderId: string;
+  actionType: "attack" | "dodge" | "maneuver" | "fight_back";
+  hidden: boolean;
+};
+
+export type CombatState = {
+  active: boolean;
+  roundNumber: number;
+  actors: CombatActor[];
+  currentActorIndex: number;
+  createdAt: string;
+};
+
+// ── Chase ──
+
+export type ChaseParticipant = {
+  memberId: string;
+  characterId: string;
+  displayName: string;
+  mov: number;
+  role: "pursuer" | "fugitive";
+  position: number;
+};
+
+export type ChaseObstacle = {
+  position: number;
+  label: string;
+  type: "hazard" | "barrier";
+  resolved: boolean;
+};
+
+export type ChaseActionRequest = {
+  participantId: string;
+  actionType: "speed_check" | "maneuver" | "conflict";
+  weaponIndex?: number;
+  hidden: boolean;
+};
+
+export type ChaseState = {
+  active: boolean;
+  participants: ChaseParticipant[];
+  obstacles: ChaseObstacle[];
+  createdAt: string;
 };
 
 export type BuildPhase = {

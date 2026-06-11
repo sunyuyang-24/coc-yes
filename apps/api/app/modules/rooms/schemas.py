@@ -34,3 +34,46 @@ class SendMessageRequest(CamelModel):
     private_to: Optional[str] = Field(default=None, alias="privateTo")
     whisper_to: Optional[str] = Field(default=None, alias="whisperTo")
     mention_ids: Optional[list[str]] = Field(default=None, alias="mentionIds")
+
+
+# ── Structured Skill/Attribute Check ──
+
+class CheckRequest(CamelModel):
+    character_id: str = Field(alias="characterId")
+    skill_name: Optional[str] = Field(default=None, alias="skillName")
+    attribute_key: Optional[str] = Field(default=None, alias="attributeKey")
+    difficulty: str = Field(default="regular")
+    hidden: bool = Field(default=False)
+
+
+class SanCheckRequest(CamelModel):
+    character_id: str = Field(alias="characterId")
+    success_loss: str = Field(alias="successLoss")
+    failure_loss: str = Field(alias="failureLoss")
+    hidden: bool = Field(default=False)
+
+
+# ── Combat ──
+
+class CombatActionRequest(CamelModel):
+    attacker_id: str = Field(alias="attackerId")
+    weapon_index: int = Field(default=0, alias="weaponIndex")
+    defender_id: str = Field(alias="defenderId")
+    action_type: str = Field(default="attack", alias="actionType")
+    hidden: bool = Field(default=False)
+
+
+# ── Chase ──
+
+class ChaseActionRequest(CamelModel):
+    participant_id: str = Field(alias="participantId")
+    action_type: str = Field(default="speed_check", alias="actionType")
+    weapon_index: Optional[int] = Field(default=None, alias="weaponIndex")
+    hidden: bool = Field(default=False)
+
+
+# ── Module Intro ──
+
+class UpdateIntroRequest(CamelModel):
+    editor_id: str = Field(alias="editorId")
+    intro: str = Field(default="", max_length=5000)
