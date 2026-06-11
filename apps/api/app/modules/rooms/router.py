@@ -82,6 +82,18 @@ async def roll_in_room(room_id: str, payload: RollDiceRequest) -> dict:
     return {"roll": roll_record}
 
 
+@router.post("/rooms/{room_id}/characters/npc")
+async def create_npc(room_id: str, name: str = Form("NPC"), keeper_id: str = Form(..., alias="keeperId")) -> dict:
+    try:
+        character = store.create_npc(room_id, keeper_id, name)
+        room = store.get_room(room_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Room or member not found") from error
+
+    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+    return {"character": character}
+
+
 @router.post("/rooms/{room_id}/characters/upload")
 async def upload_character(room_id: str, owner_id: str = Form(..., alias="ownerId"), file: UploadFile = File(...)) -> dict:
     try:
@@ -190,6 +202,22 @@ async def get_voice_file(room_id: str, filename: str):
         media = "audio/ogg"
     return FileResponse(voice_path, media_type=media)
 
+
+# ---------- Room lifecycle ----------
+
+@router.post("/rooms/{room_id}/activate")
+async def activate_room(room_id: str, editor_id: str = Form(..., alias="editorId")) -> dict:
+    try:
+        room = store.activate_room(room_id, editor_id)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Room or member not found") from error
+
+    await manager.broadcast(room_id, {"type": "room_update", "room": room})
+    return {"room": room}
 
 # ---------- Room summary ----------
 

@@ -42,7 +42,14 @@ export function VoiceRecorder({ roomId, memberId, onSent }: Props) {
       setElapsed(0);
 
       timerRef.current = setInterval(() => {
-        setElapsed((prev) => prev + 1);
+        setElapsed((prev) => {
+          const next = prev + 1;
+          if (next >= 300) { // max 5 minutes
+            stopRecording();
+            return 300;
+          }
+          return next;
+        });
       }, 1000);
     } catch (err) {
       console.error("Failed to start recording:", err);
