@@ -148,8 +148,8 @@ async def upload_voice_message(
     content = await file.read()
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="Empty audio file")
-    if len(content) > 15 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Audio file too large (max 15 MB)")
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Audio file too large (max 50 MB)")
 
     ext = ".webm"
     fname = file.filename or ""
