@@ -2799,3 +2799,15 @@ select:focus {
   border-color: rgba(255, 138, 107, 0.4);
   color: var(--danger);
 }
+
+/* ------------------------------------------------------------------ */
+/* Chat empty state
+/* ------------------------------------------------------------------ */
+
+.chat-empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--muted);
+  font-size: 1.15rem;
+  line-height: 1.8;
+}

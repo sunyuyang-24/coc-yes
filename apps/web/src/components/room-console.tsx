@@ -198,6 +198,20 @@ export function RoomConsole() {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [room?.messages.length]);
 
+
+  // 过滤后的消息列表（用于空状态判断）
+  const filteredMessages = room
+    ? room.messages.filter(m => {
+        if (!messageSearch) return true;
+        const q = messageSearch.toLowerCase();
+        return (
+          m.content.toLowerCase().includes(q) ||
+          m.senderName.toLowerCase().includes(q) ||
+          (m.roll?.label && m.roll.label.toLowerCase().includes(q))
+        );
+      })
+    : [];
+
   async function createRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setNotice("正在创建房间...");
@@ -642,18 +656,12 @@ export function RoomConsole() {
               )}
             </div>
             <div className="chat-log">
-              {room.messages
-                .filter(m => {
-                  if (!messageSearch) return true;
-                  const q = messageSearch.toLowerCase();
-                  // 搜索消息内容、发送者名、骰子标签
-                  return (
-                    m.content.toLowerCase().includes(q) ||
-                    m.senderName.toLowerCase().includes(q) ||
-                    (m.roll?.label && m.roll.label.toLowerCase().includes(q))
-                  );
-                })
-                .map((message) => (
+              {filteredMessages.length === 0 ? (
+                <p className="chat-empty">
+                  {messageSearch ? "没有匹配的消息" : "暂无消息，发送第一条消息开始跑团吧"}
+                </p>
+              ) : (
+                filteredMessages.map((message) => (
                 <article className={`chat-message chat-message--${message.type}`} key={message.id}>
                   <div className="chat-message__meta">
                     <strong>{message.senderName}</strong>
@@ -665,7 +673,7 @@ export function RoomConsole() {
                     <p>{message.content}</p>
                   )}
                 </article>
-              ))}
+              )))}
               {messageSearch && room.messages.filter(m => {
                 const q = messageSearch.toLowerCase();
                 return m.content.toLowerCase().includes(q) || m.senderName.toLowerCase().includes(q) || (m.roll?.label && m.roll.label.toLowerCase().includes(q));
