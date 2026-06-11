@@ -50,7 +50,16 @@ async def get_room(room_id: str) -> dict:
 @router.post("/rooms/{room_id}/messages")
 async def send_message(room_id: str, payload: SendMessageRequest) -> dict:
     try:
-        message = store.add_message(room_id, payload.sender_id, payload.content)
+        reply_dict = None
+        if payload.reply_to:
+            reply_dict = {"id": payload.reply_to.id, "senderName": payload.reply_to.sender_name, "content": payload.reply_to.content}
+        message = store.add_message(
+            room_id,
+            payload.sender_id,
+            payload.content,
+            reply_to=reply_dict,
+            msg_type=payload.type or "text"
+        )
         room = store.get_room(room_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Room or member not found") from error

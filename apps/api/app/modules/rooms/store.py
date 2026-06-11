@@ -66,20 +66,28 @@ class RoomStore:
         with self._lock:
             return deepcopy(self._require_room(room_id))
 
-    def add_message(self, room_id: str, sender_id: str, content: str) -> dict:
+    def add_message(self, room_id: str, sender_id: str | None, content: str, reply_to: dict | None = None, msg_type: str = "text") -> dict:
         with self._lock:
             room = self._require_room(room_id)
-            sender = self._find_member(room, sender_id)
-            message = {
+            if sender_id:
+                sender = self._find_member(room, sender_id)
+                sender_name = sender["displayName"]
+                sender_role = sender["role"]
+            else:
+                sender_name = "系统"
+                sender_role = "system"
+            message: dict = {
                 "id": uuid4().hex,
-                "type": "text",
+                "type": msg_type,
                 "roomId": room_id,
                 "senderId": sender_id,
-                "senderName": sender["displayName"],
-                "senderRole": sender["role"],
+                "senderName": sender_name,
+                "senderRole": sender_role,
                 "content": content,
                 "createdAt": self._now(),
             }
+            if reply_to:
+                message["replyTo"] = reply_to
             room["messages"].append(message)
             self._save()
             return deepcopy(message)

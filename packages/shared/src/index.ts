@@ -41,6 +41,8 @@ export type DiceRollResult = {
   successLabel: string | null;
   isSuccess: boolean | null;
   hidden: boolean;
+  characterSAN?: number | null;
+  luckState?: { allowed: boolean; newTotal: number | null };
   createdAt: string;
 };
 
@@ -90,6 +92,7 @@ export type ChatMessage = {
   senderRole: RoomMemberRole | "system";
   content: string;
   roll?: DiceRollResult;
+  replyTo?: { id: string; senderName: string; content: string };
   createdAt: string;
 };
 

@@ -25,6 +25,40 @@ type SocketEvent = {
 
 const STORAGE_KEY = "coc-yes.current-session";
 
+// ---------------------------------------------------------------------------
+// Dice sound effect (Web Audio API)
+// ---------------------------------------------------------------------------
+let _audioCtx: AudioContext | null = null;
+function _getAudioCtx(): AudioContext | null {
+  if (_audioCtx) return _audioCtx;
+  try { _audioCtx = new AudioContext(); } catch { /* 浏览器不支持 */ }
+  return _audioCtx;
+}
+
+function playDiceSound() {
+  const ctx = _getAudioCtx();
+  if (!ctx) return;
+  try {
+    ctx.resume().then(() => {
+      const now = ctx.currentTime;
+      // 骰子碰撞音效：短促嗒嗒声
+      for (let i = 0; i < 3; i++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(800 + Math.random() * 400, now + i * 0.06);
+        osc.frequency.exponentialRampToValueAtTime(200, now + i * 0.06 + 0.08);
+        gain.gain.setValueAtTime(0.15, now + i * 0.06);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.1);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + i * 0.06);
+        osc.stop(now + i * 0.06 + 0.1);
+      }
+    });
+  } catch { /* ignore */ }
+}
+
 export function RoomConsole() {
   const [room, setRoom] = useState<RoomDetail | null>(null);
   const [memberId, setMemberId] = useState<string | null>(null);
@@ -38,6 +72,8 @@ export function RoomConsole() {
   const [targetValue, setTargetValue] = useState("60");
   const [bonusPenalty, setBonusPenalty] = useState("0");
   const [hiddenRoll, setHiddenRoll] = useState(false);
+  const [replyTo, setReplyTo] = useState<{ id: string; senderName: string; content: string } | null>(null);
+  const [sanQuickRoll, setSanQuickRoll] = useState(false);
   const [characterFile, setCharacterFile] = useState<File | null>(null);
   const [notice, setNotice] = useState("创建或加入房间后，聊天会实时同步。");
   const messageEndRef = useRef<HTMLDivElement | null>(null);
@@ -375,6 +411,12 @@ export function RoomConsole() {
                   </button>
                 ))}
               </div>
+              <div className="dice-panel__checks">
+                <label className="dice-panel__check-label">
+                  <input type="checkbox" checked={sanQuickRoll} onChange={(e) => setSanQuickRoll(e.target.checked)} />
+                  SAN 检定（自动关联角色 SAN）
+                </label>
+              </div>
               <button className="button button--primary" type="submit">
                 后端投掷
               </button>
@@ -419,11 +461,17 @@ export function RoomConsole() {
               <div ref={messageEndRef} />
             </div>
 
+            {replyTo ? (
+              <div className="reply-indicator">
+                <span>回复 {replyTo.senderName}：{replyTo.content.slice(0, 60)}{replyTo.content.length > 60 ? "..." : ""}</span>
+                <button className="text-button" onClick={() => setReplyTo(null)} type="button">取消</button>
+              </div>
+            ) : null}
             <form className="composer" onSubmit={sendMessage}>
               <input
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                placeholder="输入跑团消息、线索或 KP 描述..."
+                placeholder={replyTo ? `` : "输入跑团消息、线索或 KP 描述..."}
               />
               <button className="button button--primary" type="submit">
                 发送
@@ -486,6 +534,7 @@ export function RoomConsole() {
           isKeeper={currentMember?.role === "keeper"}
         />
       ) : null}
+
     </section>
   );
 }
@@ -703,7 +752,7 @@ function CharacterCardView({
             if (val == null) return null;
             const labels: Record<string, string> = {
               hp: "HP", san: "SAN", mp: "MP", mov: "MOV",
-              db: "????", build: "??", armor: "??"
+              db: "伤害加值", build: "体格", armor: "护甲"
             };
             return (
               <div key={key} className="status-chip">

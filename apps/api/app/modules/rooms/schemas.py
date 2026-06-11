@@ -1,4 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional
 
 
 class CamelModel(BaseModel):
@@ -15,6 +16,14 @@ class JoinRoomRequest(CamelModel):
     display_name: str = Field(alias="displayName", min_length=1, max_length=40)
 
 
+class ReplyToRef(BaseModel):
+    id: str
+    sender_name: str = Field(alias="senderName")
+    content: str
+
+
 class SendMessageRequest(CamelModel):
-    sender_id: str = Field(alias="senderId", min_length=1)
+    sender_id: Optional[str] = Field(default=None, alias="senderId")
     content: str = Field(min_length=1, max_length=2000)
+    reply_to: Optional[ReplyToRef] = Field(default=None, alias="replyTo")
+    type: Optional[str] = Field(default="text")

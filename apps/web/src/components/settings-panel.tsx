@@ -192,7 +192,7 @@ export function SettingsPanel() {
               checked={settings.diceSound}
               onChange={(e) => update({ diceSound: e.target.checked })}
             />
-            <span>投骰音效（待实现）</span>
+            <span>投骰音效</span>
           </label>
         </div>
       </div>
