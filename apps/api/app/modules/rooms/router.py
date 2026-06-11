@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from uuid import uuid4
 
@@ -334,6 +335,17 @@ async def room_socket(websocket: WebSocket, room_id: str, member_id: str) -> Non
     await manager.connect(room_id, websocket, member_id)
     await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
 
+    # 心跳任务：每30秒发送ping，防止代理/防火墙断开空闲连接
+    async def heartbeat():
+        while True:
+            await asyncio.sleep(30)
+            try:
+                await websocket.send_json({"type": "ping"})
+            except Exception:
+                break
+
+    heartbeat_task = asyncio.create_task(heartbeat())
+
     try:
         await websocket.send_json({"type": "room_state", "room": room})
 
@@ -364,6 +376,7 @@ async def room_socket(websocket: WebSocket, room_id: str, member_id: str) -> Non
     except WebSocketDisconnect:
         pass
     finally:
+        heartbeat_task.cancel()
         manager.disconnect(room_id, websocket)
 
         try:

@@ -7,8 +7,15 @@ export function apiUrl(path: string) {
 export function wsUrl(path: string) {
   const base = new URL(API_BASE_URL);
   base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
-  base.pathname = path;
-  base.search = "";
+  // 分离 path 中内嵌的查询参数，避免 search="" 清掉
+  const qIndex = path.indexOf("?");
+  if (qIndex >= 0) {
+    base.pathname = path.slice(0, qIndex);
+    base.search = path.slice(qIndex);
+  } else {
+    base.pathname = path;
+    base.search = "";
+  }
   base.hash = "";
   return base.toString();
 }
