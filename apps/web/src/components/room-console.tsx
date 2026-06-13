@@ -222,6 +222,20 @@ export function RoomConsole() {
       setLeaving(false); setShowKpLeaveConfirm(false);
     }
   }
+
+  async function saveAndLeaveRoom() {
+    if (!room || !memberId) return;
+    setLeaving(true);
+    try {
+      const form = new FormData(); form.append("editorId", memberId);
+      await fetch(apiUrl(`/api/rooms/${room.id}/save-and-exit`), { method: "POST", body: form });
+    } catch { /* ignore errors during cleanup */ }
+    finally {
+      setRoom(null); setMemberId(null); window.localStorage.removeItem(STORAGE_KEY);
+      document.documentElement.dataset.background = "black";
+      setLeaving(false); setShowKpLeaveConfirm(false);
+    }
+  }
   async function deleteMessage() {
     if (!room || !memberId || !deleteMsgId) return;
     setDeleting(true);
@@ -1078,22 +1092,27 @@ export function RoomConsole() {
         </div>
       )}
 
+
       {/* KP Leave Confirmation */}
       {showKpLeaveConfirm && (
         <div className="modal-overlay" onClick={() => setShowKpLeaveConfirm(false)}>
-          <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "380px", textAlign: "center" }}>
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "420px", textAlign: "center" }}>
             <p style={{ fontSize: "15px", color: "var(--text)", margin: "0 0 8px", fontWeight: 600 }}>
               确定要离开房间吗
             </p>
             <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: "0 0 20px" }}>
-              之前的记录均不会保存
+              保存并退出：保留所有游戏记录和摘要，可随时查看
             </p>
-            <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "center", flexWrap: "wrap" }}>
+              <button className="button button--primary" style={{ borderRadius: "12px", padding: "8px 32px" }}
+                onClick={saveAndLeaveRoom} type="button" disabled={leaving}>
+                {leaving ? "退出中..." : "退出并保存"}
+              </button>
               <button className="button button--ghost" style={{ borderRadius: "12px", padding: "8px 32px" }}
                 onClick={leaveLocalRoom} type="button" disabled={leaving}>
-                {leaving ? "退出中..." : "确定"}
+                {leaving ? "退出中..." : "直接退出"}
               </button>
-              <button className="button button--danger" style={{ borderRadius: "12px", padding: "8px 32px" }}
+              <button className="button button--ghost" style={{ borderRadius: "12px", padding: "8px 32px", color: "var(--text-muted)" }}
                 onClick={() => setShowKpLeaveConfirm(false)} type="button" disabled={leaving}>
                 取消
               </button>

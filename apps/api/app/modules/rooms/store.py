@@ -739,6 +739,27 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
             self._save()
             return deepcopy(summary)
 
+    def save_and_exit(self, room_id: str, editor_id: str) -> dict:
+        """End the room, generate and persist a summary, preserve all data."""
+        with self._lock:
+            room = self._require_room(room_id)
+            editor = self._find_member(room, editor_id)
+            if editor["role"] != "keeper":
+                raise PermissionError("Only keeper can end the room")
+
+            summary = self.generate_summary(room_id)
+            room["summary"] = {
+                "draft": "",
+                "generated": summary,
+                "updatedAt": self._now(),
+                "updatedBy": editor["displayName"],
+            }
+            room["status"] = "ended"
+            room["endedAt"] = self._now()
+            self._add_system_message(room, f"{editor['displayName']} 结束了本次跑团，游戏记录已保存。")
+            self._save()
+            return {"room": deepcopy(room), "summary": deepcopy(room["summary"])}
+
     # ── Module Intro ──
 
     def update_module_intro(self, room_id: str, editor_id: str, intro: str) -> dict:

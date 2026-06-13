@@ -416,6 +416,19 @@ async def end_room(room_id: str, editor_id: str = Form(..., alias="editorId")) -
     return {"room": room}
 
 
+@router.post("/rooms/{room_id}/save-and-exit")
+async def save_and_exit(room_id: str, editor_id: str = Form(..., alias="editorId")) -> dict:
+    try:
+        result = store.save_and_exit(room_id, editor_id)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Room or member not found") from error
+
+    await manager.broadcast(room_id, {"type": "room_update", "room": result["room"]}, store)
+    return result
+
+
 @router.post("/rooms/{room_id}/delete")
 async def delete_room(room_id: str, editor_id: str = Form(..., alias="editorId")) -> dict:
     try:
