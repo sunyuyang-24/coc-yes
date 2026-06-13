@@ -204,6 +204,13 @@ export function RoomConsole() {
   const [deleting, setDeleting] = useState(false);
   const [deleteNpcId, setDeleteNpcId] = useState<string | null>(null);
   const [deletingNpc, setDeletingNpc] = useState(false);
+
+  function resetLocalSession() {
+    setRoom(null); setMemberId(null); window.localStorage.removeItem(STORAGE_KEY);
+    document.documentElement.dataset.background = "black";
+    setLeaving(false); setShowKpLeaveConfirm(false);
+  }
+
   async function leaveLocalRoom() {
     if (!room || !memberId) return;
     setLeaving(true);
@@ -216,11 +223,7 @@ export function RoomConsole() {
         await fetch(apiUrl(`/api/rooms/${room.id}/characters/remove`), { method: "POST", body: form });
       }
     } catch { /* ignore errors during cleanup */ }
-    finally {
-      setRoom(null); setMemberId(null); window.localStorage.removeItem(STORAGE_KEY);
-      document.documentElement.dataset.background = "black";
-      setLeaving(false); setShowKpLeaveConfirm(false);
-    }
+    finally { resetLocalSession(); }
   }
 
   async function saveAndLeaveRoom() {
@@ -230,11 +233,7 @@ export function RoomConsole() {
       const form = new FormData(); form.append("editorId", memberId);
       await fetch(apiUrl(`/api/rooms/${room.id}/save-and-exit`), { method: "POST", body: form });
     } catch { /* ignore errors during cleanup */ }
-    finally {
-      setRoom(null); setMemberId(null); window.localStorage.removeItem(STORAGE_KEY);
-      document.documentElement.dataset.background = "black";
-      setLeaving(false); setShowKpLeaveConfirm(false);
-    }
+    finally { resetLocalSession(); }
   }
   async function deleteMessage() {
     if (!room || !memberId || !deleteMsgId) return;
