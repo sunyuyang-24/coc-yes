@@ -12,7 +12,6 @@ type Props = {
 };
 
 export function SanCheckPanel({ roomId, character, isKeeper, onClose }: Props) {
-  const [successLoss, setSuccessLoss] = useState("0");
   const [failureLoss, setFailureLoss] = useState("1D6");
   const [hidden, setHidden] = useState(false);
   const [sending, setSending] = useState(false);
@@ -27,7 +26,7 @@ export function SanCheckPanel({ roomId, character, isKeeper, onClose }: Props) {
         method: "POST",
         body: JSON.stringify({
           characterId: character.id,
-          successLoss,
+          successLoss: "0",
           failureLoss,
           hidden: hidden && isKeeper,
         }),
@@ -57,28 +56,17 @@ export function SanCheckPanel({ roomId, character, isKeeper, onClose }: Props) {
           </div>
 
           <div className="san-check__field">
-            <label>成功损失 <small>（通常为 0 或 1）</small></label>
-            <input value={successLoss} onChange={(e) => setSuccessLoss(e.target.value)}
-              placeholder="如: 0, 1, 1D3" />
-            <small>意志检定成功时扣除的 SAN（CRB p155）</small>
-          </div>
-
-          <div className="san-check__field">
-            <label>失败损失 <small>（骰子表达式）</small></label>
+            <label>SAN 损失 <small>（骰子表达式，失败时扣除）</small></label>
             <input value={failureLoss} onChange={(e) => setFailureLoss(e.target.value)}
               placeholder="如: 1D6, 1D10, 1D4+1" />
-            <small>意志检定失败时扣除的 SAN（自动投掷该表达式）</small>
+            <small>意志检定失败时扣除的 SAN。检定成功时扣除 0。</small>
           </div>
 
           <div className="san-check__presets">
             <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>快速:</span>
-            {["0/1D6", "0/1", "0/1D3", "1/1D4", "1/1D6", "1D3/1D6", "1D4/1D10", "1D6/1D10", "1D6/1D20", "1D10/1D100"].map((preset) => (
+            {["1", "1D3", "1D4", "1D6", "1D10", "1D20", "1D100", "2D6", "2D10", "1D4+1"].map((preset) => (
               <button key={preset} type="button" className="dice-inline__preset"
-                onClick={() => {
-                  const [s, f] = preset.split("/");
-                  setSuccessLoss(s);
-                  setFailureLoss(f);
-                }}>
+                onClick={() => setFailureLoss(preset)}>
                 {preset}
               </button>
             ))}
