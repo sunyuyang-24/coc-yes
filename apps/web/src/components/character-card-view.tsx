@@ -209,7 +209,7 @@ export function CharacterCardView({
               <div key={key} className="status-chip">
                 <span className="status-chip__label">{labels[key] || key.toUpperCase()}</span>
                 <span className="status-chip__value">
-                  {val}{maxVal != null ? " / " + maxVal : ""}
+                  {maxVal != null ? maxVal + " / " : ""}{val}
                 </span>
                 {barColor && pct != null && (
                   <div className="status-chip__bar">

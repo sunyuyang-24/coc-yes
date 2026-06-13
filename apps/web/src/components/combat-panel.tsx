@@ -81,7 +81,7 @@ export function CombatPanel({ roomId, memberId, combat, characters, isKeeper, on
                   className={`combat__actor ${isCurrent ? "combat__actor--current" : ""} ${actor.hasActedThisRound ? "combat__actor--acted" : ""}`}>
                   <span className="combat__actor-dex">DEX {actor.dex}</span>
                   <span className="combat__actor-name">{char?.basic?.name || actor.displayName}</span>
-                  <span className="combat__actor-hp">HP {actor.hp}/{actor.hpMax}</span>
+                  <span className="combat__actor-hp">HP {actor.hpMax}/{actor.hp}</span>
                   {actor.db !== "0" && <span className="combat__actor-db">{actor.db}</span>}
                   {isCurrent && <span className="combat__actor-arrow">◀</span>}
                 </div>
@@ -125,7 +125,7 @@ export function CombatPanel({ roomId, memberId, combat, characters, isKeeper, on
                     const c = characters.find((ch) => ch.id === a.characterId);
                     return (
                       <option key={a.memberId} value={a.memberId}>
-                        {c?.basic?.name || a.displayName} (HP {a.hp}/{a.hpMax})
+                        {c?.basic?.name || a.displayName} (HP {a.hpMax}/{a.hp})
                       </option>
                     );
                   })}

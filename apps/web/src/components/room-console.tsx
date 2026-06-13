@@ -455,74 +455,6 @@ export function RoomConsole() {
             )}
           </div>
 
-          {/* Character Status — HP/SAN/MP with max values */}
-          <div className="left-toolbar__section">
-            <p className="left-toolbar__label">角色状态</p>
-            {room.characters?.filter((c) => !isNpcChar(c)).length ? (
-              room.characters.filter((c) => !isNpcChar(c)).map((char) => (
-                <div key={char.id} className="char-status-card"
-                  onClick={() => setSelectedCharId(selectedCharId === char.id ? null : char.id)}
-                  style={{
-                    padding: "8px 10px", marginBottom: "6px", background: selectedCharId === char.id ? "var(--bg-active)" : "var(--bg-hover)",
-                    borderRadius: "var(--radius-sm)", cursor: "pointer", border: selectedCharId === char.id ? "1px solid var(--brand)" : "1px solid transparent",
-                  }}>
-                  <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text)", marginBottom: "6px" }}>
-                    {char.basic?.name || char.ownerName || "未知角色"}
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                    {char.status.hp != null && (
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <span style={{ width: "28px", fontSize: "10px", fontWeight: 600, color: "var(--error)", textAlign: "right" }}>HP</span>
-                        <div style={{ flex: 1, height: "6px", background: "var(--bg)", borderRadius: "3px", overflow: "hidden" }}>
-                          <div style={{
-                            height: "100%", background: "var(--error)",
-                            width: char.initialStatus?.hp ? `${Math.min((char.status.hp / (char.initialStatus.hp || 1)) * 100, 100)}%` : "60%",
-                            borderRadius: "3px", transition: "width 0.3s",
-                          }} />
-                        </div>
-                        <span style={{ fontSize: "10px", color: "var(--text-secondary)", minWidth: "48px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                          {char.status.hp}{char.initialStatus?.hp != null ? `/${char.initialStatus.hp}` : ""}
-                        </span>
-                      </div>
-                    )}
-                    {char.status.san != null && (
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <span style={{ width: "28px", fontSize: "10px", fontWeight: 600, color: "#7C6FF7", textAlign: "right" }}>SAN</span>
-                        <div style={{ flex: 1, height: "6px", background: "var(--bg)", borderRadius: "3px", overflow: "hidden" }}>
-                          <div style={{
-                            height: "100%", background: "#7C6FF7",
-                            width: char.initialStatus?.san ? `${Math.min((char.status.san / (char.initialStatus.san || 1)) * 100, 100)}%` : "60%",
-                            borderRadius: "3px", transition: "width 0.3s",
-                          }} />
-                        </div>
-                        <span style={{ fontSize: "10px", color: "var(--text-secondary)", minWidth: "48px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                          {char.status.san}{char.initialStatus?.san != null ? `/${char.initialStatus.san}` : ""}
-                        </span>
-                      </div>
-                    )}
-                    {char.status.mp != null && (
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <span style={{ width: "28px", fontSize: "10px", fontWeight: 600, color: "#4FC3F7", textAlign: "right" }}>MP</span>
-                        <div style={{ flex: 1, height: "6px", background: "var(--bg)", borderRadius: "3px", overflow: "hidden" }}>
-                          <div style={{
-                            height: "100%", background: "#4FC3F7",
-                            width: char.initialStatus?.mp ? `${Math.min((char.status.mp / (char.initialStatus.mp || 1)) * 100, 100)}%` : "60%",
-                            borderRadius: "3px", transition: "width 0.3s",
-                          }} />
-                        </div>
-                        <span style={{ fontSize: "10px", color: "var(--text-secondary)", minWidth: "48px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                          {char.status.mp}{char.initialStatus?.mp != null ? `/${char.initialStatus.mp}` : ""}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p style={{ fontSize: "11px", color: "var(--text-muted)", padding: "4px 8px" }}>暂无角色卡</p>
-            )}
-          </div>
-
           {isKeeper && (
             <div className="left-toolbar__section">
               <p className="left-toolbar__label">KP 工具</p>
@@ -1013,7 +945,7 @@ export function RoomConsole() {
             })()}
             {/* Separator */}
             <div style={{ borderTop: "1px solid var(--border)", margin: "6px 8px" }} />
-            {/* Player cards — name + online only, stats moved to left panel */}
+            {/* Player cards */}
             {room.members.filter((m) => m.role === "player").map((member) => {
               const char = findMemberChar(member.id, room.characters);
               return (
@@ -1031,6 +963,52 @@ export function RoomConsole() {
                       </div>
                     </div>
                   </div>
+                  {char && (
+                    <div className="player-mini-card__stats">
+                      {char.status.hp != null && (
+                        <div className="player-mini-card__stat">
+                          <span className="player-mini-card__stat-label">HP</span>
+                          <span className="player-mini-card__stat-val" style={{ color: "var(--error)" }}>
+                            {char.initialStatus?.hp != null ? `${char.initialStatus.hp}/` : ""}{char.status.hp}
+                          </span>
+                          <div className="player-mini-card__stat-bar">
+                            <div className="player-mini-card__stat-fill" style={{
+                              width: char.initialStatus?.hp && typeof char.status.hp === "number" ?
+                                `${Math.min((char.status.hp / (char.initialStatus.hp || 1)) * 100, 100)}%` : "60%",
+                              background: "var(--error)" }} />
+                          </div>
+                        </div>
+                      )}
+                      {char.status.san != null && (
+                        <div className="player-mini-card__stat">
+                          <span className="player-mini-card__stat-label">SAN</span>
+                          <span className="player-mini-card__stat-val" style={{ color: "#7C6FF7" }}>
+                            {char.initialStatus?.san != null ? `${char.initialStatus.san}/` : ""}{char.status.san}
+                          </span>
+                          <div className="player-mini-card__stat-bar">
+                            <div className="player-mini-card__stat-fill" style={{
+                              width: char.initialStatus?.san && typeof char.status.san === "number" ?
+                                `${Math.min((char.status.san / (char.initialStatus.san || 1)) * 100, 100)}%` : "60%",
+                              background: "#7C6FF7" }} />
+                          </div>
+                        </div>
+                      )}
+                      {char.status.mp != null && (
+                        <div className="player-mini-card__stat">
+                          <span className="player-mini-card__stat-label">MP</span>
+                          <span className="player-mini-card__stat-val" style={{ color: "#4FC3F7" }}>
+                            {char.initialStatus?.mp != null ? `${char.initialStatus.mp}/` : ""}{char.status.mp}
+                          </span>
+                          <div className="player-mini-card__stat-bar">
+                            <div className="player-mini-card__stat-fill" style={{
+                              width: char.initialStatus?.mp && typeof char.status.mp === "number" ?
+                                `${Math.min((char.status.mp / (char.initialStatus.mp || 1)) * 100, 100)}%` : "60%",
+                              background: "#4FC3F7" }} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {member.role !== "keeper" && !char && (
                     <p style={{ fontSize: "11px", color: "var(--text-muted)", textAlign: "center", padding: "4px" }}>未上传角色卡</p>
                   )}
