@@ -40,7 +40,11 @@ export function RoomSetup({
   setNotice, createRoom, joinRoom,
 }: Props) {
   return (
-    <section className="setup-screens">
+    <section className="setup-screens" style={{
+      display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "24px",
+      width: "100%", maxWidth: "1080px", margin: "60px auto 40px",
+      padding: "0 24px", boxSizing: "border-box",
+    }}>
       {/* Column 1: Player / Login */}
       {isLoggedIn ? (
         <PlayerCard

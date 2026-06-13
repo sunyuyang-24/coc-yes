@@ -347,13 +347,19 @@
 /* Setup Screens — dynamic rounded cards                                */
 /* ================================================================== */
 .setup-screens {
-  display: flex; gap: 24px;
-  max-width: 1080px; margin: 60px auto 40px; padding: 0 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 24px;
+  width: 100%;
+  max-width: 1080px;
+  margin: 60px auto 40px;
+  padding: 0 24px;
   position: relative;
-  align-items: flex-start;
+  box-sizing: border-box;
 }
-.setup-screens > * {
-  flex: 1; min-width: 0;
+.setup-screens > .setup-card {
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* Floating dice particles */
@@ -708,7 +714,7 @@
   .left-toolbar { display: none; }
   .right-panel { width: 100%; border-left: none; border-top: 1px solid var(--border); max-height: 200px; flex-shrink: 1; }
   .room-body { flex-direction: column; }
-  .setup-screens { flex-direction: column; max-width: 100%; }
+  .setup-screens { grid-template-columns: 1fr !important; max-width: 100%; }
   .chat-bubble { max-width: 95%; }
   .function-bar { gap: 2px; padding: 6px 8px; overflow-x: auto; }
   .fn-pill { padding: 5px 10px; font-size: 11px; }
