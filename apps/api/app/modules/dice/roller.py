@@ -106,9 +106,8 @@ def _classify_coc_success(total: int, target_value: int | None) -> dict:
     if total == 1:
         return {"level": "critical", "label": "大成功", "isSuccess": True}
 
-    # COC 7e: skill>=50 fumble 96-100, skill<50 fumble 97-100
-    fumble_low = 96 if target_value >= 50 else 97
-    if total >= fumble_low:
+    # COC 7e CRB p90: skill<50 fumble 96-100, skill>=50 fumble 100 only
+    if total == 100 or (target_value < 50 and total >= 96):
         return {"level": "fumble", "label": "大失败", "isSuccess": False}
 
     if total <= target_value // 5:
