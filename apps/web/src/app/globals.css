@@ -188,22 +188,6 @@ label { font-size: 14px; color: var(--text-secondary); cursor: pointer; }
   font-size: 13px; color: var(--text-muted);
 }
 
-.room-console__setup { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-
-.console-card {
-  background: var(--bg-raised); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: 28px 32px;
-}
-.console-card h3 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
-.console-card__desc { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
-.console-card__fields { display: flex; flex-direction: column; gap: 12px; }
-.console-card__fields input { width: 100%; }
-.console-card__actions { margin-top: 16px; display: flex; gap: 8px; }
-
-.spectator-toggle {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 13px; color: var(--text-secondary); cursor: pointer;
-}
 
 /* Room board */
 .room-board { display: grid; grid-template-columns: 1fr 320px; gap: 20px; }
@@ -510,9 +494,7 @@ html[data-background="sepia"] {
   .layout { flex-direction: column; }
   .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); padding: 16px; }
   .main-area { padding: 16px; max-width: none; }
-  .room-console__setup { grid-template-columns: 1fr; }
   .room-board { grid-template-columns: 1fr; }
-  .console-card { padding: 20px; }
 }
 
 html[data-background="black"] { /* default - inherits :root */ }
