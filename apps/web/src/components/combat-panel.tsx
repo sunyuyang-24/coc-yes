@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { CombatState, CharacterCard } from "@coc-yes/shared";
 import { apiUrl } from "@/lib/api";
+import { HiddenToggle } from "@/components/hidden-toggle";
 
 type Props = {
   roomId: string;
@@ -132,10 +133,7 @@ export function CombatPanel({ roomId, memberId, combat, characters, isKeeper, on
                 </select>
               </div>
 
-              <label style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
-                <input type="checkbox" checked={hidden} onChange={(e) => setHidden(e.target.checked)} />
-                暗投
-              </label>
+              <HiddenToggle checked={hidden} onChange={setHidden} />
 
               <div style={{ display: "flex", gap: "8px" }}>
                 <button className="button button--primary button--sm" onClick={act} disabled={sending || !defenderId} type="button">

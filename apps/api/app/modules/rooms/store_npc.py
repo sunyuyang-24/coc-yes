@@ -2,24 +2,21 @@
 
 from __future__ import annotations
 
+from app.modules.characters.constants import ATTRIBUTE_LABELS, CN_ATTR_MAP
+
 
 class NpcMixin:
     """NPC creation methods mixed into RoomStore. Expects self to provide:
-    _lock, _save(), _require_room(), _find_member(), _add_system_message(),
-    add_character(), _now().
+    _lock, _save(), _require_room(), _find_member(), _require_keeper(),
+    _add_system_message(), add_character(), _now().
     """
 
     def create_npc(self, room_id: str, keeper_id: str, name: str) -> dict:
-        label_map = {
-            "STR": "力量", "DEX": "敏捷", "POW": "意志",
-            "CON": "体质", "APP": "外貌", "EDU": "教育",
-            "SIZ": "体型", "INT": "智力", "LUCK": "幸运",
-        }
         character = {
             "basic": {"name": f"{name} (NPC)", "occupation": "NPC"},
             "attributes": [
                 {"key": k, "label": v, "value": 50, "half": 25, "fifth": 10}
-                for k, v in label_map.items()
+                for k, v in ATTRIBUTE_LABELS.items()
             ],
             "status": {"hp": 10, "san": 50, "mp": 10, "luck": 50, "mov": 7, "armor": 0},
             "initialStatus": {"hp": 10, "san": 50, "mp": 10, "luck": 50, "mov": 7, "armor": 0},
@@ -36,13 +33,7 @@ class NpcMixin:
     def create_npc_from_text(self, room_id: str, keeper_id: str, npc_text: str) -> dict:
         import re
 
-        label_map = {
-            "STR": "力量", "DEX": "敏捷", "POW": "意志",
-            "CON": "体质", "APP": "外貌", "EDU": "教育",
-            "SIZ": "体型", "INT": "智力", "LUCK": "幸运",
-        }
-
-        attrs: dict[str, int] = {k: 50 for k in label_map}
+        attrs: dict[str, int] = {k: 50 for k in ATTRIBUTE_LABELS}
         name = "NPC"
         occupation = "NPC"
         skills: list[dict] = []
@@ -126,12 +117,7 @@ class NpcMixin:
                     if 1 <= val <= 999:
                         attrs[key] = val
 
-                cn_attr_map = {
-                    "力量": "STR", "体质": "CON", "体型": "SIZ", "敏捷": "DEX",
-                    "智力": "INT", "外貌": "APP", "意志": "POW", "教育": "EDU",
-                    "幸运": "LUCK", "灵感": "INT",
-                }
-                for cn_name, en_key in cn_attr_map.items():
+                for cn_name, en_key in CN_ATTR_MAP.items():
                     for m in re.finditer(re.escape(cn_name) + r'\s*[：:=\s]*\s*(\d{1,3})', content):
                         val = int(m.group(1))
                         if 1 <= val <= 999:
@@ -241,7 +227,7 @@ class NpcMixin:
 
         attributes_list = [
             {"key": k, "label": v, "value": attrs[k], "half": attrs[k] // 2, "fifth": attrs[k] // 5}
-            for k, v in label_map.items()
+            for k, v in ATTRIBUTE_LABELS.items()
         ]
 
         character = {

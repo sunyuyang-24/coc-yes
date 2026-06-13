@@ -9,6 +9,7 @@ import { VoiceRoom } from "@/components/voice-room";
 import { VoiceMessage } from "@/components/voice-message";
 import { SummaryPanel } from "@/components/summary-panel";
 import { SettingsPanel, loadSettings } from "@/components/settings-panel";
+import { HiddenToggle } from "@/components/hidden-toggle";
 import { SanCheckPanel } from "@/components/san-check-panel";
 import { CombatPanel } from "@/components/combat-panel";
 import { ChasePanel } from "@/components/chase-panel";
@@ -42,6 +43,17 @@ function isNpcChar(c: CharacterCard): boolean {
 }
 function findMemberChar(memberId: string, chars: CharacterCard[] | undefined): CharacterCard | undefined {
   return chars?.find((c) => c.ownerId === memberId && c.active !== false && !isNpcChar(c));
+}
+
+function getBubbleClass(message: {
+  type: string; roll?: { hidden?: boolean } | null;
+}): string {
+  if (message.type === "system") return "chat-bubble--system";
+  if (message.roll?.hidden) return "chat-bubble--hidden";
+  if (message.type === "dice_roll") return "chat-bubble--dice";
+  if (message.type === "private") return "chat-bubble--private";
+  if (message.type === "voice") return "chat-bubble--voice";
+  return "chat-bubble--text";
 }
 
 export function RoomConsole() {
@@ -342,6 +354,18 @@ export function RoomConsole() {
     catch { /* ignore */ } }
   const isKeeper = currentMember?.role === "keeper";
 
+  const npcCharacters = useMemo(() =>
+    room?.characters?.filter((c) => isNpcChar(c)) ?? [],
+  [room?.characters]);
+  const reversedRolls = useMemo(() =>
+    [...(room?.rolls ?? [])].reverse().slice(0, 30),
+  [room?.rolls]);
+  const selectedChar = useMemo(() =>
+    selectedCharId ? room?.characters?.find((c) => c.id === selectedCharId) ?? null : null,
+  [selectedCharId, room?.characters]);
+  const myChar = useMemo(() =>
+    memberId ? findMemberChar(memberId, room?.characters) : null,
+  [memberId, room?.characters]);
 
   // ---- RENDER: Login gate + Setup screens ----
   if (!isLoggedIn || !room) {
@@ -372,8 +396,6 @@ export function RoomConsole() {
   }
 
   // ---- RENDER: Room (redesigned layout) ----
-  const selectedChar = selectedCharId ? room.characters?.find((c) => c.id === selectedCharId) : null;
-  const myChar = memberId ? findMemberChar(memberId, room.characters) : null;
 
   return (
     <div className="room-layout">
@@ -534,15 +556,15 @@ export function RoomConsole() {
                 </div>
               )}
               {/* Existing NPC list */}
-              {room.characters?.filter((c) => isNpcChar(c)).length ? (
+              {npcCharacters.length ? (
                 <>
                   <button className={`left-toolbar__btn ${showNpcList ? "left-toolbar__btn--active" : ""}`}
                     onClick={() => { setShowNpcList(!showNpcList); setShowNpcPanel(false); }} type="button">
-                    📋 NPC 列表 ({room.characters.filter((c) => isNpcChar(c)).length})
+                    📋 NPC 列表 ({npcCharacters.length})
                   </button>
                   {showNpcList && (
                     <div className="left-toolbar__panel">
-                      {room.characters.filter((c) => isNpcChar(c)).map((npc) => (
+                      {npcCharacters.map((npc) => (
                         <div key={npc.id} style={{
                           display: "flex", alignItems: "center", gap: "8px",
                           padding: "6px 8px", borderRadius: "var(--radius-sm)",
@@ -579,7 +601,7 @@ export function RoomConsole() {
               {room.rolls?.length ? `${room.rolls.length} 次投掷` : "暂无记录"}
             </div>
             <div style={{ maxHeight: "160px", overflowY: "auto" }}>
-              {[...(room.rolls ?? [])].reverse().slice(0, 30).map((roll) => (
+              {reversedRolls.map((roll) => (
                 <div key={roll.id} style={{ fontSize: "11px", padding: "2px 8px", color: roll.hidden ? "var(--error)" : "var(--text-secondary)" }}>
                   {formatTime(roll.createdAt)} {roll.rollerName} - {roll.expression} - {roll.hidden ? "暗投" : `${roll.total}${roll.successLabel ? ` (${roll.successLabel})` : ""}`}
                 </div>
@@ -636,9 +658,7 @@ export function RoomConsole() {
                 const isVoice = message.type === "voice"; const isKeeperMsg = message.senderRole === "keeper";
                 const asChar = message.asCharacterName;
                 const senderLabel = asChar ? asChar : message.senderName;
-                const bubbleClass = isSystem ? "chat-bubble--system" : isHidden ? "chat-bubble--hidden" :
-                  isDice ? "chat-bubble--dice" : isPrivate ? "chat-bubble--private" :
-                  isVoice ? "chat-bubble--voice" : "chat-bubble--text";
+                const bubbleClass = getBubbleClass(message);
                 return (
                   <article className={`chat-bubble ${bubbleClass}`} key={message.id}>
                     {!isSystem && (
@@ -739,12 +759,7 @@ export function RoomConsole() {
                           {d === "regular" ? "常规" : d === "hard" ? "困难" : "极难"}
                         </button>
                       ))}
-                      {isKeeper && (
-                        <label style={{ fontSize: "11px", display: "flex", alignItems: "center", gap: "4px", marginLeft: "8px" }}>
-                          <input type="checkbox" checked={hiddenRoll} onChange={(e) => setHiddenRoll(e.target.checked)} />
-                          暗投
-                        </label>
-                      )}
+                      {isKeeper && <HiddenToggle checked={hiddenRoll} onChange={setHiddenRoll} />}
                     </div>
                   )}
                   {(isKeeper && kpCheckCharId
@@ -792,12 +807,7 @@ export function RoomConsole() {
                           {d === "regular" ? "常规" : d === "hard" ? "困难" : "极难"}
                         </button>
                       ))}
-                      {isKeeper && (
-                        <label style={{ fontSize: "11px", display: "flex", alignItems: "center", gap: "4px", marginLeft: "8px" }}>
-                          <input type="checkbox" checked={hiddenRoll} onChange={(e) => setHiddenRoll(e.target.checked)} />
-                          暗投
-                        </label>
-                      )}
+                      {isKeeper && <HiddenToggle checked={hiddenRoll} onChange={setHiddenRoll} />}
                     </div>
                   )}
                   {(isKeeper && kpCheckCharId
@@ -846,12 +856,7 @@ export function RoomConsole() {
                         <button key={item} type="button" className="dice-inline__preset" onClick={() => setExpression(item)}>{item}</button>
                       ))}
                     </div>
-                    {isKeeper && (
-                      <label style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
-                        <input type="checkbox" checked={hiddenRoll} onChange={(e) => setHiddenRoll(e.target.checked)} />
-                        仅KP可见
-                      </label>
-                    )}
+                    {isKeeper && <HiddenToggle checked={hiddenRoll} onChange={setHiddenRoll} label="仅KP可见" />}
                     <button className="button button--primary button--sm" type="submit">投掷</button>
                   </form>
                 </div>

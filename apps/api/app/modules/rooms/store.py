@@ -10,6 +10,7 @@ from pathlib import Path
 from threading import RLock
 from uuid import uuid4
 
+from app.core.time_utils import now_iso
 from app.modules.rooms.store_combat import CombatMixin
 from app.modules.rooms.store_chase import ChaseMixin
 from app.modules.rooms.store_npc import NpcMixin
@@ -39,13 +40,13 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                 "name": name,
                 "status": "preparing",
                 "inviteCode": self._invite_code(),
-                "createdAt": self._now(),
+                "createdAt": now_iso(),
                 "members": [
                     {
                         "id": keeper_id,
                         "displayName": keeper_name,
                         "role": "keeper",
-                        "joinedAt": self._now(),
+                        "joinedAt": now_iso(),
                         "online": False,
                     }
                 ],
@@ -97,7 +98,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                     "id": member_id,
                     "displayName": display_name,
                     "role": role if role in ("player", "spectator") else "player",
-                    "joinedAt": self._now(),
+                    "joinedAt": now_iso(),
                     "online": False,
                 }
             )
@@ -112,9 +113,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
     def set_room_theme(self, room_id: str, theme: str, editor_id: str) -> dict:
         with self._lock:
             room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only the Keeper can change room theme")
+            editor = self._require_keeper(room, editor_id, "change room theme")
             room["roomTheme"] = theme
             self._save()
             return deepcopy(room)
@@ -191,7 +190,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                 "senderName": sender_name,
                 "senderRole": sender_role,
                 "content": content,
-                "createdAt": self._now(),
+                "createdAt": now_iso(),
             }
             if as_character_id:
                 message["asCharacterId"] = as_character_id
@@ -227,7 +226,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                 "rollerId": roller_id,
                 "rollerName": roller_name,
                 "rollerRole": roller["role"],
-                "createdAt": self._now(),
+                "createdAt": now_iso(),
             }
             if as_character_id:
                 roll_record["asCharacterId"] = as_character_id
@@ -306,8 +305,8 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                 "ownerId": owner_id,
                 "ownerName": owner["displayName"],
                 "keeperNotes": "",
-                "createdAt": self._now(),
-                "updatedAt": self._now(),
+                "createdAt": now_iso(),
+                "updatedAt": now_iso(),
             }
 
             existing_index = next(
@@ -330,10 +329,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
     def update_character(self, room_id: str, character_id: str, editor_id: str, updates: dict) -> dict:
         with self._lock:
             room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can edit character cards")
+            editor = self._require_keeper(room, editor_id, "edit character cards")
 
             character = self._find_character(room, character_id)
 
@@ -379,12 +375,12 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
             change = {
                 "editorId": editor_id,
                 "editorName": editor["displayName"],
-                "timestamp": self._now(),
+                "timestamp": now_iso(),
                 "changes": {k: v for k, v in updates.items() if v is not None},
             }
             character.setdefault("history", []).append(change)
 
-            character["updatedAt"] = self._now()
+            character["updatedAt"] = now_iso()
             display_name = character.get("basic", {}).get("name") or character["sourceFileName"]
             self._add_system_message(room, f"{editor['displayName']} 更新了角色卡「{display_name}」。")
             self._save()
@@ -408,9 +404,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
         """Delete a specific character by ID. Only KP can delete NPC cards."""
         with self._lock:
             room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can delete characters")
+            editor = self._require_keeper(room, editor_id, "delete characters")
             characters = room.get("characters", [])
             idx = next((i for i, c in enumerate(characters) if c.get("id") == character_id), None)
             if idx is None:
@@ -466,7 +460,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                 "senderName": "系统",
                 "senderRole": "system",
                 "content": content,
-                "createdAt": self._now(),
+                "createdAt": now_iso(),
             }
         )
 
@@ -602,7 +596,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                 room.get("roomTheme", "black"),
                 room.get("moduleIntro"),
                 json.dumps(room.get("summary"), ensure_ascii=False) if room.get("summary") else None,
-                room.get("createdAt", self._now()),
+                room.get("createdAt", now_iso()),
                 room.get("endedAt"),
             ),
         )
@@ -618,7 +612,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                     m.get("userId"),
                     m["displayName"], m["role"],
                     int(m.get("online", False)),
-                    m.get("joinedAt", self._now()),
+                    m.get("joinedAt", now_iso()),
                 ),
             )
 
@@ -640,7 +634,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                     msg.get("senderRole", "player"),
                     msg.get("content", ""),
                     json.dumps(extra, ensure_ascii=False) if extra else None,
-                    msg.get("createdAt", self._now()),
+                    msg.get("createdAt", now_iso()),
                 ),
             )
 
@@ -657,8 +651,8 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                     char.get("ownerId"),
                     char.get("ownerName", ""),
                     json.dumps(char_data, ensure_ascii=False),
-                    char.get("createdAt", self._now()),
-                    char.get("updatedAt", self._now()),
+                    char.get("createdAt", now_iso()),
+                    char.get("updatedAt", now_iso()),
                 ),
             )
 
@@ -674,7 +668,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                     roll.get("id", ""), room_id,
                     roll.get("rollerId", ""),
                     json.dumps(roll_data, ensure_ascii=False),
-                    roll.get("createdAt", self._now()),
+                    roll.get("createdAt", now_iso()),
                 ),
             )
 
@@ -712,6 +706,12 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
 
         raise KeyError("member_not_found")
 
+    def _require_keeper(self, room: dict, member_id: str, action: str = "perform this action") -> dict:
+        member = self._find_member(room, member_id)
+        if member["role"] != "keeper":
+            raise PermissionError(f"Only keeper can {action}")
+        return member
+
     def _find_character(self, room: dict, character_id: str) -> dict:
         for character in room.get("characters", []):
             if character["id"] == character_id:
@@ -732,9 +732,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
     def activate_room(self, room_id: str, editor_id: str) -> dict:
         with self._lock:
             room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can activate the room")
+            editor = self._require_keeper(room, editor_id, "activate the room")
             if room["status"] != "preparing":
                 raise ValueError("Room can only be activated from preparing status")
             room["status"] = "active"
@@ -746,11 +744,9 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
         """Mark room as ended and return summary data."""
         with self._lock:
             room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can end the room")
+            editor = self._require_keeper(room, editor_id, "end the room")
             room["status"] = "ended"
-            room["endedAt"] = self._now()
+            room["endedAt"] = now_iso()
             self._add_system_message(room, f"{editor['displayName']} 结束了本次跑团。")
             self._save()
             return deepcopy(room)
@@ -808,12 +804,10 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
         """Save the KP-edited summary draft."""
         with self._lock:
             room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can edit the summary")
+            editor = self._require_keeper(room, editor_id, "edit the summary")
             summary = room.setdefault("summary", {})
             summary["draft"] = draft
-            summary["updatedAt"] = self._now()
+            summary["updatedAt"] = now_iso()
             summary["updatedBy"] = editor["displayName"]
             self._save()
             return deepcopy(summary)
@@ -822,19 +816,17 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
         """End the room, generate and persist a summary, preserve all data."""
         with self._lock:
             room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can end the room")
+            editor = self._require_keeper(room, editor_id, "end the room")
 
             summary = self.generate_summary(room_id)
             room["summary"] = {
                 "draft": "",
                 "generated": summary,
-                "updatedAt": self._now(),
+                "updatedAt": now_iso(),
                 "updatedBy": editor["displayName"],
             }
             room["status"] = "ended"
-            room["endedAt"] = self._now()
+            room["endedAt"] = now_iso()
             self._add_system_message(room, f"{editor['displayName']} 结束了本次跑团，游戏记录已保存。")
             self._save()
             return {"room": deepcopy(room), "summary": deepcopy(room["summary"])}
@@ -844,9 +836,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
     def update_module_intro(self, room_id: str, editor_id: str, intro: str) -> dict:
         with self._lock:
             room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can edit module intro")
+            editor = self._require_keeper(room, editor_id, "edit module intro")
             room["moduleIntro"] = intro
             self._add_system_message(room, f"{editor['displayName']} 更新了模组简介。")
             self._save()
@@ -956,303 +946,6 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
             return int(expr), None
         result = roll_dice(expr)
         return result["total"], result
-    def start_combat(self, room_id: str, editor_id: str) -> dict:
-        with self._lock:
-            room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can start combat")
-
-            actors = []
-            for member in room["members"]:
-                if member["role"] == "spectator":
-                    continue
-                char = next((c for c in room.get("characters", [])
-                           if c.get("ownerId") == member["id"] and c.get("active") is not False), None)
-                if not char:
-                    continue
-                attrs = {a["key"]: (a["value"] or 50) for a in char.get("attributes", [])}
-                dex = attrs.get("DEX", 50)
-                db, build = self._compute_db(attrs.get("STR", 50), attrs.get("SIZ", 50))
-                status = char.get("status") or {}
-                actors.append({
-                    "memberId": member["id"],
-                    "characterId": char["id"],
-                    "displayName": char.get("basic", {}).get("name") or member["displayName"],
-                    "dex": dex,
-                    "hp": status.get("hp") or 0,
-                    "hpMax": (char.get("initialStatus") or {}).get("hp") or status.get("hp") or 10,
-                    "db": db,
-                    "build": build,
-                    "hasActedThisRound": False,
-                })
-
-            actors.sort(key=lambda a: a["dex"], reverse=True)
-
-            combat_state = {
-                "active": True,
-                "roundNumber": 1,
-                "actors": actors,
-                "currentActorIndex": 0,
-                "createdAt": self._now(),
-            }
-            room["combatState"] = combat_state
-            self._add_system_message(room, f"{editor['displayName']} 开始了战斗轮次！Round 1")
-            self._save()
-            return deepcopy(combat_state)
-    def act_combat(self, room_id: str, attacker_id: str, weapon_index: int,
-                   defender_id: str, action_type: str, hidden: bool) -> dict:
-        from app.modules.dice.roller import roll_dice, opposed_check
-        with self._lock:
-            room = self._require_room(room_id)
-            cs = room.get("combatState")
-            if not cs or not cs.get("active"):
-                raise ValueError("No active combat round")
-
-            actors = cs["actors"]
-            current_idx = cs["currentActorIndex"]
-            if current_idx >= len(actors):
-                raise ValueError("Combat round already ended")
-
-            current_actor = actors[current_idx]
-            if current_actor["memberId"] != attacker_id:
-                raise ValueError("Not your turn")
-            if current_actor["hasActedThisRound"]:
-                raise ValueError("This actor has already acted this round")
-
-            attacker_char = self._find_character(room, current_actor["characterId"])
-            defender_actor = next((a for a in actors if a["memberId"] == defender_id), None)
-            if not defender_actor:
-                raise ValueError("Target not found in combat")
-            defender_char = self._find_character(room, defender_actor["characterId"])
-
-            # Get weapon info
-            weapons = attacker_char.get("weapons", [])
-            weapon = weapons[weapon_index] if 0 <= weapon_index < len(weapons) else None
-            weapon_name = weapon.get("name", "徒手") if weapon else "徒手"
-            weapon_damage = str(weapon.get("damage", "1D3")) if weapon else "1D3"
-            weapon_skill_name = str(weapon.get("skill", "格斗(斗殴)")) if weapon else "格斗(斗殴)"
-            is_impaling = self._is_impaling_weapon(weapon)
-
-            # Find attacker's skill value for this weapon
-            attacker_skills = attacker_char.get("skills", [])
-            skill_value = 50  # default
-            for sk in attacker_skills:
-                if sk.get("name") == weapon_skill_name:
-                    skill_value = sk.get("value") or 50
-                    break
-
-            # Roll attacker's attack
-            attack_roll = roll_dice("1d100", target_value=skill_value, bonus_penalty=0)
-
-            # Defender action
-            if action_type == "dodge":
-                defender_skills = defender_char.get("skills", [])
-                dodge_value = 25
-                for sk in defender_skills:
-                    if sk.get("name") == "闪避":
-                        dodge_value = sk.get("value") or 25
-                        break
-                defend_roll = roll_dice("1d100", target_value=dodge_value, bonus_penalty=0)
-                # Opposed: attack vs dodge (defender wins ties per CRB p108)
-                winner = opposed_check(attack_roll["total"], skill_value,
-                                      defend_roll["total"], dodge_value,
-                                      defender_wins_tie=True)
-                attacker_wins = winner.get("winner") == "actor"
-                if attacker_wins:
-                    # Apply damage (defender attempted dodge, failed — CRB p108)
-                    damage = self._calc_damage(weapon_damage, current_actor["db"],
-                                              attack_roll.get("successLevel"),
-                                              is_impaling=is_impaling,
-                                              is_fighting_back=False)
-                    new_hp = max(0, defender_actor["hp"] - damage)
-                    defender_actor["hp"] = new_hp
-                    defender_char.setdefault("status", {})["hp"] = new_hp
-                    self._add_system_message(room,
-                        f"⚔️ [闪避失败] {current_actor['displayName']} 用{weapon_name}攻击"
-                        f"{defender_actor['displayName']}（{defend_roll['total']}/{dodge_value} 闪避检定未通过），"
-                        f"造成 {damage} 点伤害！HP → {defender_actor['hp']}")
-                    # Check major wound
-                    if damage >= defender_actor["hpMax"] // 2:
-                        self._add_system_message(room,
-                            f"💀 {defender_actor['displayName']} 受到重伤！")
-                else:
-                    self._add_system_message(room,
-                        f"💨 [闪避成功] {defender_actor['displayName']} 闪避了 {current_actor['displayName']} "
-                        f"用{weapon_name}的攻击（{defend_roll['total']}/{dodge_value}）")
-            elif action_type == "fight_back":
-                # Fight back — contested fighting roll, attacker wins ties (CRB p108)
-                defender_skills = defender_char.get("skills", [])
-                fight_value = 25
-                defender_weapon = None
-                defender_weapon_damage = "1D3"
-                def_weapons = defender_char.get("weapons", [])
-                if def_weapons:
-                    defender_weapon = def_weapons[0]
-                    defender_weapon_damage = str(defender_weapon.get("damage", "1D3"))
-                for sk in defender_skills:
-                    if sk.get("name") in ("格斗(斗殴)", "格斗", "斗殴"):
-                        fight_value = sk.get("value") or 25
-                        break
-                defend_roll = roll_dice("1d100", target_value=fight_value, bonus_penalty=0)
-                winner = opposed_check(attack_roll["total"], skill_value,
-                                      defend_roll["total"], fight_value,
-                                      defender_wins_tie=False)
-                attacker_wins = winner.get("winner") == "actor"
-                if attacker_wins:
-                    damage = self._calc_damage(weapon_damage, current_actor["db"],
-                                              attack_roll.get("successLevel"),
-                                              is_impaling=is_impaling,
-                                              is_fighting_back=True)
-                    new_hp = max(0, defender_actor["hp"] - damage)
-                    defender_actor["hp"] = new_hp
-                    defender_char.setdefault("status", {})["hp"] = new_hp
-                    self._add_system_message(room,
-                        f"⚔️ [反击失败] {current_actor['displayName']} 用{weapon_name}攻击"
-                        f"{defender_actor['displayName']}（反击检定未通过），造成 {damage} 点伤害！HP → {new_hp}")
-                    if damage >= defender_actor["hpMax"] // 2:
-                        self._add_system_message(room,
-                            f"💀 {defender_actor['displayName']} 受到重伤！")
-                else:
-                    # Defender won fight-back — apply defender's damage to attacker (CRB p108)
-                    def_is_impaling = self._is_impaling_weapon(defender_weapon)
-                    counter_damage = self._calc_damage(defender_weapon_damage, defender_actor.get("db", "0"),
-                                                       defend_roll.get("successLevel"),
-                                                       is_impaling=def_is_impaling,
-                                                       is_fighting_back=True)
-                    new_hp = max(0, current_actor["hp"] - counter_damage)
-                    current_actor["hp"] = new_hp
-                    attacker_char.setdefault("status", {})["hp"] = new_hp
-                    def_wname = (defender_weapon.get("name") if defender_weapon else "徒手") or "徒手"
-                    self._add_system_message(room,
-                        f"🛡️ [反击成功] {defender_actor['displayName']} 反击 {current_actor['displayName']}，"
-                        f"用{def_wname}造成 {counter_damage} 点伤害！HP → {new_hp}")
-                    if counter_damage >= current_actor["hpMax"] // 2:
-                        self._add_system_message(room,
-                            f"💀 {current_actor['displayName']} 受到重伤！")
-            elif action_type == "attack":
-                # Direct attack — no defender action roll, hit on success (CRB p102-104)
-                atk_success = attack_roll.get("successLevel") in ("critical", "extreme", "hard", "regular")
-                if atk_success:
-                    damage = self._calc_damage(weapon_damage, current_actor["db"],
-                                              attack_roll.get("successLevel"),
-                                              is_impaling=is_impaling,
-                                              is_fighting_back=False)
-                    new_hp = max(0, defender_actor["hp"] - damage)
-                    defender_actor["hp"] = new_hp
-                    defender_char.setdefault("status", {})["hp"] = new_hp
-                    self._add_system_message(room,
-                        f"⚔️ [直接攻击] {current_actor['displayName']} 用{weapon_name}"
-                        f"命中 {defender_actor['displayName']}，造成 {damage} 点伤害！HP → {new_hp}")
-                    if damage >= defender_actor["hpMax"] // 2:
-                        self._add_system_message(room,
-                            f"💀 {defender_actor['displayName']} 受到重伤！")
-                else:
-                    self._add_system_message(room,
-                        f"❌ [直接攻击] {current_actor['displayName']} 用{weapon_name}攻击"
-                        f"{defender_actor['displayName']}，未命中（{attack_roll['total']}/{skill_value}）")
-            else:
-                # Maneuver — contested check without damage (CRB p90-92)
-                defender_skills = defender_char.get("skills", [])
-                # Use appropriate skill for maneuver; default to STR-based resistance
-                resist_value = 25
-                for attr in defender_char.get("attributes", []):
-                    if attr.get("key") == "STR":
-                        resist_value = attr.get("value") or 25
-                        break
-                defend_roll = roll_dice("1d100", target_value=resist_value, bonus_penalty=0)
-                winner = opposed_check(attack_roll["total"], skill_value,
-                                      defend_roll["total"], resist_value,
-                                      defender_wins_tie=False)
-                attacker_wins = winner.get("winner") == "actor"
-                if attacker_wins:
-                    self._add_system_message(room,
-                        f"🤼 [战术动作] {current_actor['displayName']} 对 {defender_actor['displayName']} "
-                        f"的战术动作成功！（{attack_roll['total']}/{skill_value} vs {defend_roll['total']}/{resist_value}）")
-                else:
-                    self._add_system_message(room,
-                        f"🤼 [战术动作] {defender_actor['displayName']} 抵抗了 {current_actor['displayName']} "
-                        f"的战术动作（{defend_roll['total']}/{resist_value} vs {attack_roll['total']}/{skill_value}）")
-
-            # Mark current actor as acted
-            current_actor["hasActedThisRound"] = True
-
-            # Record the dice roll
-            atk_sl = attack_roll.get("successLevel")
-            roll_record = {
-                "expression": "1d100",
-                "total": attack_roll["total"],
-                "breakdown": attack_roll.get("breakdown", []),
-                "targetValue": skill_value,
-                "bonusPenalty": 0,
-                "successLevel": atk_sl,
-                "successLabel": attack_roll.get("successLabel"),
-                "isSuccess": atk_sl in ("critical", "extreme", "hard", "regular"),
-                "hidden": hidden,
-                "label": f"⚔️ {current_actor['displayName']} {weapon_name} → {defender_actor['displayName']}",
-            }
-            self.add_dice_roll(room_id, attacker_id, roll_record)
-
-            # Advance initiative
-            cs["currentActorIndex"] += 1
-            if cs["currentActorIndex"] >= len(actors):
-                # Next round
-                cs["roundNumber"] += 1
-                cs["currentActorIndex"] = 0
-                for a in actors:
-                    a["hasActedThisRound"] = False
-                self._add_system_message(room, f"🔄 Round {cs['roundNumber']} 开始！")
-
-            self._save()
-            return deepcopy(cs)
-    def _calc_damage(self, weapon_damage: str, db: str, success_level: str | None,
-                     is_impaling: bool = False, is_fighting_back: bool = False) -> int:
-        """COC 7e 伤害计算 (CRB p104-108).
-
-        - 极难/大成功：最大武器伤害 + 最大 DB（不掷骰）
-        - 穿刺武器且非反击时：额外 + 武器伤害掷骰（穿刺规则 CRB p104）
-        - 反击成功时：只取最大伤害，不加穿刺骰（CRB p108）
-        """
-        from app.modules.dice.roller import roll_dice
-        # Normalize DB expression: _compute_db returns "+1D4" etc., but roll_dice expects "1D4"
-        db_expr = db.lstrip("+") if db else db
-        wd = roll_dice(weapon_damage)["total"]
-        db_val = roll_dice(db_expr)["total"] if db_expr and db_expr not in ("0", "-1", "-2") else (
-            int(db_expr) if db_expr and db_expr.lstrip('-').isdigit() else 0)
-        if success_level in ("extreme", "critical"):
-            max_wd = self._max_damage(weapon_damage)
-            max_db_val = self._max_damage(db_expr) if db_expr and db_expr not in ("0", "-1", "-2") else 0
-            if is_impaling and not is_fighting_back:
-                return max_wd + max_db_val + wd  # impale: max + weapon damage roll
-            return max_wd + max_db_val  # max damage only
-        return max(0, wd + db_val)
-    def end_combat(self, room_id: str, editor_id: str) -> dict:
-        with self._lock:
-            room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can end combat")
-            if "combatState" in room:
-                del room["combatState"]
-            self._add_system_message(room, f"{editor['displayName']} 结束了战斗轮次。")
-            self._save()
-            return deepcopy(room)
-    def get_chase_state(self, room_id: str) -> dict | None:
-        with self._lock:
-            room = self._require_room(room_id)
-            cs = room.get("chaseState")
-            return deepcopy(cs) if cs else None
-    def end_chase(self, room_id: str, editor_id: str) -> dict:
-        with self._lock:
-            room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can end chase")
-            if "chaseState" in room:
-                del room["chaseState"]
-            self._add_system_message(room, f"{editor['displayName']} 结束了追逐轮次。")
-            self._save()
-            return deepcopy(room)
 
     def add_voice_message(self, room_id: str, sender_id: str, voice_record: dict) -> dict:
         """添加语音消息到房间。同时添加到 messages 列表和 voices 列表。"""
@@ -1271,7 +964,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                 "voiceId": voice_record["id"],
                 "voiceUrl": voice_record["url"],
                 "voiceDuration": voice_record.get("duration", 0),
-                "createdAt": self._now(),
+                "createdAt": now_iso(),
             }
             room.setdefault("messages", []).append(message)
             self._save()
@@ -1381,9 +1074,6 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                         db.execute("DELETE FROM dice_rolls WHERE room_id = ?", (rid,))
                     db.commit()
             return len(to_remove)
-
-    def _now(self) -> str:
-        return datetime.now(timezone.utc).isoformat()
 
     def _format_roll_message(self, roll: dict) -> str:
         if roll.get("hidden"):

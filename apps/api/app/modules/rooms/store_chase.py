@@ -7,16 +7,14 @@ from copy import deepcopy
 
 class ChaseMixin:
     """Chase methods mixed into RoomStore. Expects self to provide:
-    _lock, _save(), _require_room(), _find_member(), _add_system_message(),
-    add_dice_roll(), _now().
+    _lock, _save(), _require_room(), _find_member(), _require_keeper(),
+    _add_system_message(), add_dice_roll(), _now().
     """
 
     def start_chase(self, room_id: str, editor_id: str) -> dict:
         with self._lock:
             room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can start chase")
+            editor = self._require_keeper(room, editor_id, "start chase")
 
             participants = []
             for member in room["members"]:
@@ -120,9 +118,7 @@ class ChaseMixin:
     def end_chase(self, room_id: str, editor_id: str) -> dict:
         with self._lock:
             room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can end chase")
+            editor = self._require_keeper(room, editor_id, "end chase")
             if "chaseState" in room:
                 del room["chaseState"]
             self._add_system_message(room, f"{editor['displayName']} 结束了追逐轮次。")

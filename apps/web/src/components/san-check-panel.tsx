@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { CharacterCard } from "@coc-yes/shared";
 import { apiRequest } from "@/lib/api";
+import { HiddenToggle } from "@/components/hidden-toggle";
 
 type Props = {
   roomId: string;
@@ -72,12 +73,7 @@ export function SanCheckPanel({ roomId, character, isKeeper, onClose }: Props) {
             ))}
           </div>
 
-          {isKeeper && (
-            <label style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
-              <input type="checkbox" checked={hidden} onChange={(e) => setHidden(e.target.checked)} />
-              暗投（仅KP可见）
-            </label>
-          )}
+          {isKeeper && <HiddenToggle checked={hidden} onChange={setHidden} label="暗投（仅KP可见）" />}
 
           {error && (
             <p style={{ color: "var(--error)", fontSize: "12px", textAlign: "center" }}>{error}</p>
