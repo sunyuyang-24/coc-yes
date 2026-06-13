@@ -537,9 +537,16 @@ class RoomStore:
                 character["lockedFields"].extend(updates.get("lockedFields") or [])
 
             if "status" in updates and updates["status"]:
-                character.setdefault("status", {}).update(
-                    {k: v for k, v in updates["status"].items() if v is not None}
-                )
+                init = character.get("initialStatus") or {}
+                capped: dict[str, object] = {}
+                for k, v in updates["status"].items():
+                    if v is None:
+                        continue
+                    # Cap HP/SAN/MP at their max values (initialStatus is immutable)
+                    if k in ("hp", "san", "mp") and k in init and init[k] is not None:
+                        v = min(v, init[k])
+                    capped[k] = v
+                character.setdefault("status", {}).update(capped)
 
             # Record change history
             change = {
@@ -805,20 +812,33 @@ class RoomStore:
             room = self._require_room(room_id)
             roller = self._find_member(room, roller_id)
             character = self._find_character(room, character_id)
-            current_san = (character.get("status") or {}).get("san") or 0
-            max_san = (character.get("initialStatus") or {}).get("san") or 99
+
+            status = character.get("status") or {}
+            init_status = character.get("initialStatus") or {}
+            current_san = status.get("san") if status.get("san") is not None else (
+                init_status.get("san") if init_status.get("san") is not None else 0
+            )
+            max_san = init_status.get("san") if init_status.get("san") is not None else 99
 
             # Roll 1d100 vs current SAN
             dice_result = roll_dice("1d100", target_value=current_san, bonus_penalty=0)
             success_level = dice_result.get("successLevel")
             is_success = success_level in ("critical", "extreme", "hard", "regular")
 
-            # Parse loss expression
+            # Parse loss expression and roll the loss dice
             loss_expr = success_loss if is_success else failure_loss
-            loss_amount = self._parse_loss(loss_expr)
+            loss_amount, loss_dice = self._parse_loss(loss_expr)
 
-            # Update character SAN
-            new_san = max(0, current_san - loss_amount)
+            # If the loss was a dice roll (not plain number), record it as a visible roll
+            loss_record = None
+            if loss_dice is not None:
+                name = character.get("basic", {}).get("name", "未知")
+                loss_dice["label"] = f"{name} SAN损失 ({'成功' if is_success else '失败'}→{loss_expr})"
+                loss_dice["hidden"] = hidden
+                loss_record = self.add_dice_roll(room_id, roller_id, loss_dice)
+
+            # Update character SAN (capped between 0 and max_san)
+            new_san = max(0, min(max_san, current_san - loss_amount))
             character.setdefault("status", {})["san"] = new_san
 
             # Full insanity check (COC 7e CRB p155-164)
@@ -833,7 +853,7 @@ class RoomStore:
                     break
             insanity = insanity_check(loss_amount, new_san, max_san, cumulative, int_value, pre_loss_san=current_san)
 
-            # Record result
+            # Record the 1d100 SAN check result
             label = f"{character.get('basic', {}).get('name', '未知')} SAN CHECK (当前SAN={current_san})"
             dice_result["label"] = label
             dice_result["hidden"] = hidden
@@ -849,15 +869,20 @@ class RoomStore:
                 "newSan": new_san,
                 "sanLost": loss_amount,
                 "lossParams": f"{success_loss}/{failure_loss}",
+                "lossExprRolled": loss_expr,
                 "isSuccess": is_success,
                 "insanity": insanity,
             }
+            if loss_record:
+                result["lossRecord"] = loss_record
 
-            # System message for SAN change
+            # System message for SAN change — show the loss dice breakdown if available
+            loss_detail = f"{loss_expr}=[{', '.join(str(r) for r in loss_dice['breakdown'][0]['rolls'])}]" if loss_dice else loss_expr
             loss_str = f"-{loss_amount}" if loss_amount > 0 else "0"
             msg = (f"{character.get('basic', {}).get('name', '未知')} SAN CHECK "
                 f"{'成功' if is_success else '失败'}（{success_loss}/{failure_loss}），"
-                f"SAN {current_san} → {new_san} ({loss_str})")
+                f"实际损失：{loss_detail} → {loss_str}，"
+                f"SAN {current_san} → {new_san}")
             if insanity.get("permanentInsanity"):
                 msg += " [永久疯狂！调查员退场]"
             elif insanity.get("needsIntRoll"):
@@ -869,16 +894,19 @@ class RoomStore:
             self._save()
             return result
 
-    def _parse_loss(self, expr: str) -> int:
-        """Parse a SAN loss expression like '1', '1D6', '1D4+1' and return the rolled value."""
+    def _parse_loss(self, expr: str) -> tuple[int, dict | None]:
+        """Parse a SAN loss expression like '1', '1D6', '1D4+1' and return (amount, dice_result).
+
+        dice_result is None for plain numbers; otherwise it's the full roll_dice dict
+        so callers can record it as a visible dice roll.
+        """
         import re
         from app.modules.dice.roller import roll_dice
         expr = expr.strip().upper()
         if re.match(r'^\d+$', expr):
-            return int(expr)
-        # Use the dice roller for expressions like 1D6, 2D10+1, etc.
+            return int(expr), None
         result = roll_dice(expr)
-        return result["total"]
+        return result["total"], result
 
     # ── Combat ──
 
