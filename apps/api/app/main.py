@@ -45,7 +45,7 @@ async def _cleanup_loop():
     while True:
         await asyncio.sleep(15)
         try:
-            removed = store.cleanup_empty_rooms(max_idle_seconds=30)
+            removed = store.cleanup_empty_rooms(max_idle_seconds=300)
             if removed:
                 print(f"[cleanup] removed {removed} empty room(s)")
         except Exception:

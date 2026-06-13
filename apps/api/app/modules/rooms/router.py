@@ -66,15 +66,24 @@ async def send_message(room_id: str, payload: SendMessageRequest) -> dict:
         reply_dict = None
         if payload.reply_to:
             reply_dict = {"id": payload.reply_to.id, "senderName": payload.reply_to.sender_name, "content": payload.reply_to.content}
+        attachment_dict = None
+        if payload.attachment:
+            attachment_dict = {
+                "url": payload.attachment.url,
+                "filename": payload.attachment.filename,
+                "size": payload.attachment.size,
+                "contentType": payload.attachment.content_type,
+            }
         message = store.add_message(
             room_id,
             payload.sender_id,
-            payload.content,
+            payload.content or "",
             reply_to=reply_dict,
-            msg_type=payload.type or "text",
+            msg_type=payload.type or (payload.attachment and "attachment") or "text",
             private_to=payload.private_to,
             whisper_to=payload.whisper_to,
-            mention_ids=payload.mention_ids
+            mention_ids=payload.mention_ids,
+            attachment=attachment_dict,
         )
         room = store.get_room(room_id)
     except KeyError as error:
@@ -237,6 +246,69 @@ async def get_voice_file(room_id: str, filename: str):
     return FileResponse(voice_path, media_type=media)
 
 
+# ---------- File / image upload ----------
+
+ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".txt", ".md", ".json", ".csv"}
+ALLOWED_MIMETYPES = {
+    "image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml",
+    "application/pdf", "text/plain", "text/markdown", "application/json", "text/csv",
+}
+
+@router.post("/rooms/{room_id}/files")
+async def upload_file(
+    room_id: str,
+    sender_id: str = Form(..., alias="senderId"),
+    file: UploadFile = File(...),
+) -> dict:
+    max_size = 10 * 1024 * 1024  # 10 MB
+    if file.size is not None and file.size > max_size:
+        raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(content) > max_size:
+        raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
+
+    fname = file.filename or "file"
+    ext = ""
+    if "." in fname:
+        ext = "." + fname.rsplit(".", 1)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS and file.content_type not in ALLOWED_MIMETYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext or file.content_type}")
+
+    upload_dir = settings.data_dir / "uploads" / room_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    file_id = uuid4().hex
+    file_path = upload_dir / f"{file_id}{ext}"
+    file_path.write_bytes(content)
+
+    url = f"/api/rooms/{room_id}/files/{file_id}{ext}"
+    return {
+        "url": url,
+        "filename": fname,
+        "size": len(content),
+        "contentType": file.content_type or "application/octet-stream",
+    }
+
+
+@router.get("/rooms/{room_id}/files/{filename:path}")
+async def get_file(room_id: str, filename: str):
+    if ".." in filename or filename.startswith("/") or filename.startswith("\\"):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    from fastapi.responses import FileResponse
+    file_path = settings.data_dir / "uploads" / room_id / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    mime_map = {
+        "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "gif": "image/gif", "webp": "image/webp", "svg": "image/svg+xml",
+        "pdf": "application/pdf", "txt": "text/plain", "md": "text/markdown",
+        "json": "application/json", "csv": "text/csv",
+    }
+    return FileResponse(file_path, media_type=mime_map.get(ext, "application/octet-stream"))
+
+
 # ---------- Room lifecycle ----------
 
 @router.post("/rooms/{room_id}/activate")
@@ -282,6 +354,29 @@ async def end_room(room_id: str, editor_id: str = Form(..., alias="editorId")) -
     return {"room": room}
 
 
+@router.post("/rooms/{room_id}/delete")
+async def delete_room(room_id: str, editor_id: str = Form(..., alias="editorId")) -> dict:
+    try:
+        room = store.get_room(room_id)
+        editor = next((m for m in room.get("members", []) if m["id"] == editor_id), None)
+        if not editor or editor["role"] != "keeper":
+            raise HTTPException(status_code=403, detail="Only keeper can delete the room")
+        store.delete_room(room_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Room not found") from None
+    return {"deleted": True}
+
+
+@router.post("/rooms/{room_id}/characters/remove")
+async def remove_room_character(room_id: str, member_id: str = Form(..., alias="memberId")) -> dict:
+    try:
+        room = store.remove_character(room_id, member_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Room or member not found") from None
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
+    return {"removed": True}
+
+
 @router.get("/rooms/{room_id}/summary")
 async def get_summary(room_id: str) -> dict:
     try:
@@ -309,16 +404,27 @@ async def save_summary_route(room_id: str, editor_id: str = Form(..., alias="edi
 # ---------- COC 7e Advanced Rules ----------
 
 @router.post("/rooms/{room_id}/coc/opposed")
-async def opposed_roll(room_id: str, expression: str = Form("1d100"), target: str = Form("50"), opponentExpression: str = Form("1d100"), opponentTarget: str = Form("50")) -> dict:
+async def opposed_roll(room_id: str, expression: str = Form("1d100"), target: str = Form("50"), opponentExpression: str = Form("1d100"), opponentTarget: str = Form("50"), actorTotal: str = Form(""), opponentTotal: str = Form(""), defenderWinsTie: str = Form("false")) -> dict:
     from app.modules.dice.roller import roll_dice as rd
     try:
         target_int = int(target)
         opp_target_int = int(opponentTarget)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid numeric value for target")
-    actor = rd(expression, target_value=target_int)
-    opponent = rd(opponentExpression, target_value=opp_target_int)
-    result = opposed_check(actor["total"], target_int, opponent["total"], opp_target_int)
+
+    # Accept pre-rolled totals; re-roll only if not provided
+    if actorTotal and opponentTotal:
+        try:
+            actor = {"total": int(actorTotal), "targetValue": target_int, "breakdown": []}
+            opponent = {"total": int(opponentTotal), "targetValue": opp_target_int, "breakdown": []}
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid numeric value for pre-rolled total")
+    else:
+        actor = rd(expression, target_value=target_int)
+        opponent = rd(opponentExpression, target_value=opp_target_int)
+
+    dw_tie = defenderWinsTie.lower() == "true"
+    result = opposed_check(actor["total"], target_int, opponent["total"], opp_target_int, defender_wins_tie=dw_tie)
     return {"actor": actor, "opponent": opponent, "result": result}
 
 @router.post("/rooms/{room_id}/coc/heal")
@@ -330,6 +436,22 @@ async def heal_check(room_id: str, hpCurrent: str = Form("0"), hpMax: str = Form
     if healType == "medicine":
         return medicine_check(chp, mhp)
     return first_aid_check(chp, mhp)
+
+@router.post("/rooms/{room_id}/coc/firstaid")
+async def firstaid_alias(room_id: str, hpCurrent: str = Form("0"), hpMax: str = Form("10")) -> dict:
+    """Alias for /coc/heal with first_aid type."""
+    try:
+        return first_aid_check(int(hpCurrent), int(hpMax))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid numeric value for HP")
+
+@router.post("/rooms/{room_id}/coc/majorwound")
+async def majorwound_alias(room_id: str, damage: str = Form("0"), hpMax: str = Form("10")) -> dict:
+    """Alias for /coc/wound."""
+    try:
+        return major_wound_check(int(damage), int(hpMax))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid numeric value for damage or HP")
 
 @router.post("/rooms/{room_id}/coc/wound")
 async def wound_check(room_id: str, damage: str = Form("0"), hpMax: str = Form("10")) -> dict:
@@ -357,6 +479,13 @@ async def malf_check(room_id: str, total: str = Form("0"), malfValue: str = Form
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid numeric value for malfunction check")
 
+@router.post("/rooms/{room_id}/coc/pushing")
+async def pushing_roll(room_id: str, total: str = Form("0"), target: str = Form("50"), isPushed: str = Form("false")) -> dict:
+    try:
+        return pushing_check(int(total), int(target), isPushed.lower() == "true")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid numeric value for pushing check")
+
 # ---------- Structured Skill/Attribute Check ----------
 
 @router.post("/rooms/{room_id}/rolls/check")
@@ -370,9 +499,24 @@ async def structured_check(room_id: str, payload: CheckRequest) -> dict:
     # Find skill or attribute value
     target_value = 50
     label = ""
+    # Bilingual skill name mapping (English → Chinese)
+    _SKILL_ALIASES: dict[str, str] = {
+        "dodge": "闪避", "library use": "图书馆使用", "spot hidden": "侦查",
+        "listen": "聆听", "psychology": "心理学", "stealth": "潜行",
+        "first aid": "急救", "medicine": "医学", " occult": "神秘学",
+        "history": "历史", "archaeology": "考古学", "law": "法律",
+        "fast talk": "话术", "persuade": "说服", "intimidate": "恐吓",
+        "charm": "魅惑", "climb": "攀爬", "swim": "游泳", "jump": "跳跃",
+        "drive auto": "汽车驾驶", "pilot": "驾驶", "ride": "骑术",
+        "fighting": "格斗", "brawl": "格斗(斗殴)", "firearms": "射击",
+        "handgun": "射击(手枪)", "rifle": "射击(步枪)", "shotgun": "射击(霰弹枪)",
+    }
     if payload.skill_name:
+        lookup = payload.skill_name.strip()
         for sk in character.get("skills", []):
-            if sk.get("name") == payload.skill_name:
+            sk_name = (sk.get("name") or "").strip()
+            # Try exact match first (both Chinese and English), then alias match
+            if sk_name == lookup or sk_name.lower() == lookup.lower():
                 val = sk.get("value") or 50
                 if payload.difficulty == "hard":
                     target_value = val // 2
@@ -380,7 +524,17 @@ async def structured_check(room_id: str, payload: CheckRequest) -> dict:
                     target_value = val // 5
                 else:
                     target_value = val
-                label = f"{character.get('basic', {}).get('name', '??')} | {payload.skill_name}"
+                label = f"{character.get('basic', {}).get('name', '??')} | {sk_name}"
+                break
+            if _SKILL_ALIASES.get(lookup.lower()) == sk_name:
+                val = sk.get("value") or 50
+                if payload.difficulty == "hard":
+                    target_value = val // 2
+                elif payload.difficulty == "extreme":
+                    target_value = val // 5
+                else:
+                    target_value = val
+                label = f"{character.get('basic', {}).get('name', '??')} | {sk_name}"
                 break
     elif payload.attribute_key:
         for attr in character.get("attributes", []):
@@ -462,6 +616,12 @@ async def combat_action(room_id: str, payload: CombatActionRequest) -> dict:
 
     await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
     return {"combatState": cs}
+
+
+@router.post("/rooms/{room_id}/combat/act")
+async def combat_act_alias(room_id: str, payload: CombatActionRequest) -> dict:
+    """Alias for /combat/action."""
+    return await combat_action(room_id, payload)
 
 
 @router.post("/rooms/{room_id}/combat/end")

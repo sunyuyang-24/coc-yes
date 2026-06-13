@@ -12,7 +12,7 @@ def roll_dice(expression: str, target_value: int | None = None, bonus_penalty: i
     count, sides, modifier = _parse_expression(expression)
     normalized = f"{count}d{sides}{_format_modifier(modifier)}"
 
-    if count == 1 and sides == 100 and bonus_penalty != 0:
+    if count == 1 and sides == 100:
         total, breakdown = _roll_coc_d100(bonus_penalty)
     else:
         rolls = [_RNG.randint(1, sides) for _ in range(count)]
@@ -162,12 +162,19 @@ def opposed_check(actor_total: int, actor_target: int, opponent_total: int, oppo
 
     # Same success level: higher skill wins (CRB p90), or tie rule for combat
     if defender_wins_tie:
-        winner = "opponent"  # dodger wins ties
+        winner = "opponent"  # dodger/defender wins ties (CRB p108 dodge)
     else:
-        winner = _winner_by_skill()
+        # Attacker wins ties for fight-back (CRB p108)
+        by_skill = _winner_by_skill()
+        winner = "actor" if by_skill == "tie" else by_skill
 
-    return {"winner": winner, "actorLevel": a_order, "opponentLevel": o_order,
-            "reason": f"同等级{'（防守方胜）' if defender_wins_tie else ''}，技能值{'更高' if winner != 'tie' else '相同'}"}
+    # Build reason
+    if winner == "actor":
+        reason = f"同等级，攻击方胜（技能值{actor_target} vs {opponent_target}）"
+    else:
+        reason = f"同等级，防守方胜（技能值{opponent_target} vs {actor_target}）"
+
+    return {"winner": winner, "actorLevel": a_order, "opponentLevel": o_order, "reason": reason}
 
 
 def pushing_check(total: int, target: int, is_pushed: bool = False) -> dict:
@@ -221,7 +228,7 @@ def major_wound_check(damage: int, hp_max: int) -> dict:
     }
 
 
-def insanity_check(san_loss: int, current_san: int, max_san: int = 99, cumulative_daily_loss: int = 0, int_value: int = 50) -> dict:
+def insanity_check(san_loss: int, current_san: int, max_san: int = 99, cumulative_daily_loss: int = 0, int_value: int = 50, pre_loss_san: int | None = None) -> dict:
     """COC 7e 疯狂判定 (CRB p156-164).
 
     - SAN=0: 永久疯狂，调查员退场
@@ -250,8 +257,9 @@ def insanity_check(san_loss: int, current_san: int, max_san: int = 99, cumulativ
         result["needsIntRoll"] = True
         result["message"] = f"SAN 损失 {san_loss} >= 5，需 INT 检定（CRB p155）"
 
-    # Indefinite: cumulative daily loss >= 1/5 of current SAN (CRB p156)
-    daily_threshold = max(current_san // 5, 1)
+    # Indefinite: cumulative daily loss >= 1/5 of pre-loss SAN (CRB p156)
+    threshold_san = pre_loss_san if pre_loss_san is not None else current_san
+    daily_threshold = max(threshold_san // 5, 1)
     if cumulative_daily_loss + san_loss >= daily_threshold:
         result["indefiniteInsanity"] = True
         if result["message"]:

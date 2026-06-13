@@ -37,7 +37,8 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(errorText || `HTTP ${response.status}`);
+      const err = Object.assign(new Error(errorText || `HTTP ${response.status}`), { status: response.status });
+      throw err;
     }
 
     return response.json() as Promise<T>;

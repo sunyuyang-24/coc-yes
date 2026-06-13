@@ -12,7 +12,7 @@ type Props = {
 };
 
 export function SanCheckPanel({ roomId, character, isKeeper, onClose }: Props) {
-  const [successLoss, setSuccessLoss] = useState("1");
+  const [successLoss, setSuccessLoss] = useState("0");
   const [failureLoss, setFailureLoss] = useState("1D6");
   const [hidden, setHidden] = useState(false);
   const [sending, setSending] = useState(false);
@@ -57,22 +57,22 @@ export function SanCheckPanel({ roomId, character, isKeeper, onClose }: Props) {
           </div>
 
           <div className="san-check__field">
-            <label>成功损失</label>
+            <label>成功损失 <small>（通常为 0 或 1）</small></label>
             <input value={successLoss} onChange={(e) => setSuccessLoss(e.target.value)}
-              placeholder="如: 1, 1D3, 1D6" />
-            <small>理智检定成功时扣除的 SAN 值</small>
+              placeholder="如: 0, 1, 1D3" />
+            <small>意志检定成功时扣除的 SAN（CRB p155）</small>
           </div>
 
           <div className="san-check__field">
-            <label>失败损失</label>
+            <label>失败损失 <small>（骰子表达式）</small></label>
             <input value={failureLoss} onChange={(e) => setFailureLoss(e.target.value)}
               placeholder="如: 1D6, 1D10, 1D4+1" />
-            <small>理智检定失败时扣除的 SAN 值</small>
+            <small>意志检定失败时扣除的 SAN（自动投掷该表达式）</small>
           </div>
 
           <div className="san-check__presets">
             <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>快速:</span>
-            {["0/1", "0/1D3", "0/1D6", "1/1D4", "1/1D6", "1D3/1D6", "1D4/1D10", "1D6/1D10", "1D6/1D20", "1D10/1D100"].map((preset) => (
+            {["0/1D6", "0/1", "0/1D3", "1/1D4", "1/1D6", "1D3/1D6", "1D4/1D10", "1D6/1D10", "1D6/1D20", "1D10/1D100"].map((preset) => (
               <button key={preset} type="button" className="dice-inline__preset"
                 onClick={() => {
                   const [s, f] = preset.split("/");

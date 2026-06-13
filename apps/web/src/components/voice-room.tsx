@@ -21,6 +21,7 @@ type Props = {
 };
 
 export function VoiceRoom({ roomId, memberId, memberName, memberNames, isKeeper }: Props) {
+  const mediaUnavailable = typeof navigator === "undefined" || !navigator.mediaDevices;
   const [joined, setJoined] = useState(false);
   const [peers, setPeers] = useState<VoicePeer[]>([]);
   const [muted, setMuted] = useState(false);
@@ -45,6 +46,7 @@ export function VoiceRoom({ roomId, memberId, memberName, memberNames, isKeeper 
 
   // 枚举音频输入设备
   useEffect(() => {
+    if (!navigator.mediaDevices) return;
     navigator.mediaDevices.enumerateDevices().then(devices => {
       setAudioDevices(devices.filter(d => d.kind === "audioinput"));
     });
@@ -52,6 +54,7 @@ export function VoiceRoom({ roomId, memberId, memberName, memberNames, isKeeper 
 
   // Create peer connection
   const createPeer = useCallback((targetId: string, displayName: string, isPolite: boolean) => {
+    if (typeof RTCPeerConnection === "undefined") return null as unknown as RTCPeerConnection;
     const pc = new RTCPeerConnection({
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
@@ -154,6 +157,8 @@ export function VoiceRoom({ roomId, memberId, memberName, memberNames, isKeeper 
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: "webrtc_voice_join" }));
+      setJoined(true);
+      joiningRef.current = false;
     };
 
     ws.onmessage = (event) => {
@@ -271,6 +276,7 @@ export function VoiceRoom({ roomId, memberId, memberName, memberNames, isKeeper 
   const joinVoice = useCallback(async () => {
     // 双重防护：防止快速点击或重复加入
     if (joiningRef.current || wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (!navigator.mediaDevices) { alert("语音功能需要 HTTPS 或 localhost 环境"); return; }
     joiningRef.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -378,23 +384,29 @@ export function VoiceRoom({ roomId, memberId, memberName, memberNames, isKeeper 
   if (!joined) {
     return (
       <div className="voice-room">
-        {/* 麦克风设备选择 */}
-        {audioDevices.length > 1 && (
-          <select
-            className="voice-room__device"
-            value={selectedDevice}
-            onChange={e => setSelectedDevice(e.target.value)}
-          >
-            <option value="">默认麦克风</option>
-            {audioDevices.map(d => (
-              <option key={d.deviceId} value={d.deviceId}>{d.label || "未知设备"}</option>
-            ))}
-          </select>
+        {mediaUnavailable ? (
+          <span className="voice-room__hint">语音功能需要 HTTPS 安全连接</span>
+        ) : (
+          <>
+            {/* 麦克风设备选择 */}
+            {audioDevices.length > 1 && (
+              <select
+                className="voice-room__device"
+                value={selectedDevice}
+                onChange={e => setSelectedDevice(e.target.value)}
+              >
+                <option value="">默认麦克风</option>
+                {audioDevices.map(d => (
+                  <option key={d.deviceId} value={d.deviceId}>{d.label || "未知设备"}</option>
+                ))}
+              </select>
+            )}
+            <button className="button button--ghost" onClick={joinVoice} type="button">
+              加入语音房间
+            </button>
+            <span className="voice-room__hint">加入后可与其他在线成员实时语音通话</span>
+          </>
         )}
-        <button className="button button--ghost" onClick={joinVoice} type="button">
-          加入语音房间
-        </button>
-        <span className="voice-room__hint">加入后可与其他在线成员实时语音通话</span>
       </div>
     );
   }

@@ -41,8 +41,8 @@ class RoomConnectionManager:
                             sanitized = store.get_room_sanitized(payload["room"]["id"], member_id)
                             data = {"type": "room_update", "room": sanitized}
                         except Exception:
-                            logger.exception("Failed to sanitize room data for broadcast; falling back to empty payload")
-                            data = {"type": "room_update", "room": {}, "error": "sanitization_failed"}
+                            logger.exception("Failed to sanitize room data for broadcast; skipping this client")
+                            continue
                 await websocket.send_json(data)
             except (WebSocketDisconnect, RuntimeError):
                 stale.append(websocket)

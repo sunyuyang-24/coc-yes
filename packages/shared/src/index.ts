@@ -85,9 +85,16 @@ export type CharacterCard = {
   updatedAt: string;
 };
 
+export type AttachmentInfo = {
+  url: string;
+  filename: string;
+  size: number;
+  contentType: string;
+};
+
 export type ChatMessage = {
   id: string;
-  type: "text" | "system" | "dice_roll" | "private" | "voice";
+  type: "text" | "system" | "dice_roll" | "private" | "voice" | "attachment";
   roomId: string;
   senderId: string | null;
   senderName: string;
@@ -98,6 +105,7 @@ export type ChatMessage = {
   privateTo?: string;
   whisperTo?: string;
   mentionIds?: string[];
+  attachment?: AttachmentInfo;
   createdAt: string;
 };
 

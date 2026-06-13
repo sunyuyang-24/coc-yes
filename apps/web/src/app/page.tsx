@@ -1,4 +1,5 @@
 import { ApiStatus } from "@/components/api-status";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { RoomConsole } from "@/components/room-console";
 
 export default function Home() {
@@ -14,7 +15,9 @@ export default function Home() {
         </nav>
       </header>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <RoomConsole />
+        <ErrorBoundary>
+          <RoomConsole />
+        </ErrorBoundary>
       </div>
     </main>
   );

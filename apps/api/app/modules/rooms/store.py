@@ -120,7 +120,7 @@ class RoomStore:
 
         return room
 
-    def add_message(self, room_id: str, sender_id: str | None, content: str, reply_to: dict | None = None, msg_type: str = "text", private_to: str | None = None, whisper_to: str | None = None, mention_ids: list[str] | None = None) -> dict:
+    def add_message(self, room_id: str, sender_id: str | None, content: str, reply_to: dict | None = None, msg_type: str = "text", private_to: str | None = None, whisper_to: str | None = None, mention_ids: list[str] | None = None, attachment: dict | None = None) -> dict:
         with self._lock:
             room = self._require_room(room_id)
             if sender_id:
@@ -148,6 +148,8 @@ class RoomStore:
                 message["whisperTo"] = whisper_to
             if mention_ids:
                 message["mentionIds"] = mention_ids
+            if attachment:
+                message["attachment"] = attachment
             room["messages"].append(message)
             self._save()
             return deepcopy(message)
@@ -204,9 +206,9 @@ class RoomStore:
             "background": {}, "experiences": [], "spells": [],
             "warnings": [], "sourceFileName": "npc",
         }
-        return self.add_character(room_id, keeper_id, character)
+        return self.add_character(room_id, keeper_id, character, replace_existing=False)
 
-    def add_character(self, room_id: str, owner_id: str, character: dict) -> dict:
+    def add_character(self, room_id: str, owner_id: str, character: dict, replace_existing: bool = True) -> dict:
         with self._lock:
             room = self._require_room(room_id)
             owner = self._find_member(room, owner_id)
@@ -225,7 +227,7 @@ class RoomStore:
             existing_index = next(
                 (index for index, item in enumerate(characters) if item.get("ownerId") == owner_id),
                 None,
-            )
+            ) if replace_existing else None
 
             if existing_index is None:
                 characters.append(record)
@@ -295,6 +297,27 @@ class RoomStore:
             self._save()
 
             return deepcopy(character)
+
+    def remove_character(self, room_id: str, owner_id: str) -> dict:
+        with self._lock:
+            room = self._require_room(room_id)
+            characters = room.get("characters", [])
+            idx = next((i for i, c in enumerate(characters) if c.get("ownerId") == owner_id), None)
+            if idx is not None:
+                removed = characters.pop(idx)
+                owner = self._find_member(room, owner_id)
+                display_name = removed.get("basic", {}).get("name") or removed.get("sourceFileName", "?")
+                self._add_system_message(room, f"{owner['displayName']} 的角色卡「{display_name}」已移除。")
+                self._save()
+            return deepcopy(room)
+
+    def delete_room(self, room_id: str) -> bool:
+        with self._lock:
+            if room_id in self._rooms:
+                del self._rooms[room_id]
+                self._save()
+                return True
+            return False
 
     def set_member_online(self, room_id: str, member_id: str, online: bool) -> dict:
         with self._lock:
@@ -482,12 +505,13 @@ class RoomStore:
 
     def san_check_roll(self, room_id: str, roller_id: str, character_id: str,
                        success_loss: str, failure_loss: str, hidden: bool) -> dict:
-        from app.modules.dice.roller import roll_dice
+        from app.modules.dice.roller import roll_dice, insanity_check
         with self._lock:
             room = self._require_room(room_id)
             roller = self._find_member(room, roller_id)
             character = self._find_character(room, character_id)
             current_san = (character.get("status") or {}).get("san") or 0
+            max_san = (character.get("initialStatus") or {}).get("san") or 99
 
             # Roll 1d100 vs current SAN
             dice_result = roll_dice("1d100", target_value=current_san, bonus_penalty=0)
@@ -502,8 +526,19 @@ class RoomStore:
             new_san = max(0, current_san - loss_amount)
             character.setdefault("status", {})["san"] = new_san
 
+            # Full insanity check (COC 7e CRB p155-164)
+            # Track daily cumulative loss per character
+            daily_key = f"san_daily_{character_id}"
+            cumulative = (room.get(daily_key, 0) or 0) + loss_amount
+            room[daily_key] = cumulative
+            int_value = 50
+            for attr in character.get("attributes", []):
+                if attr.get("key") == "INT":
+                    int_value = attr.get("value") or 50
+                    break
+            insanity = insanity_check(loss_amount, new_san, max_san, cumulative, int_value, pre_loss_san=current_san)
+
             # Record result
-            loss_str = f"{success_loss if is_success else failure_loss} → SAN -{loss_amount}"
             label = f"{character.get('basic', {}).get('name', '未知')} SAN CHECK (当前SAN={current_san})"
             dice_result["label"] = label
             dice_result["hidden"] = hidden
@@ -520,17 +555,21 @@ class RoomStore:
                 "sanLost": loss_amount,
                 "lossParams": f"{success_loss}/{failure_loss}",
                 "isSuccess": is_success,
-                "triggersInsanity": loss_amount >= 5,
+                "insanity": insanity,
             }
 
             # System message for SAN change
-            self._add_system_message(
-                room,
-                f"{character.get('basic', {}).get('name', '未知')} SAN CHECK "
-                f"{'成功' if is_success else '失败'}，SAN {current_san} → {new_san} "
-                f"({'-' if loss_amount > 0 else ''}{loss_amount})"
-                + (" [触发临时疯狂检定]" if loss_amount >= 5 else "")
-            )
+            loss_str = f"-{loss_amount}" if loss_amount > 0 else "0"
+            msg = (f"{character.get('basic', {}).get('name', '未知')} SAN CHECK "
+                f"{'成功' if is_success else '失败'}（{success_loss}/{failure_loss}），"
+                f"SAN {current_san} → {new_san} ({loss_str})")
+            if insanity.get("permanentInsanity"):
+                msg += " [永久疯狂！调查员退场]"
+            elif insanity.get("needsIntRoll"):
+                msg += " [需 INT 检定判定临时疯狂]"
+            if insanity.get("indefiniteInsanity"):
+                msg += " [单日累计触发不定期疯狂]"
+            self._add_system_message(room, msg)
 
             self._save()
             return result
@@ -642,6 +681,7 @@ class RoomStore:
             weapon_name = weapon.get("name", "徒手") if weapon else "徒手"
             weapon_damage = str(weapon.get("damage", "1D3")) if weapon else "1D3"
             weapon_skill_name = str(weapon.get("skill", "格斗(斗殴)")) if weapon else "格斗(斗殴)"
+            is_impaling = self._is_impaling_weapon(weapon)
 
             # Find attacker's skill value for this weapon
             attacker_skills = attacker_char.get("skills", [])
@@ -669,29 +709,36 @@ class RoomStore:
                                       defender_wins_tie=True)
                 attacker_wins = winner.get("winner") == "actor"
                 if attacker_wins:
-                    # Apply damage (defender dodged, not fighting back)
+                    # Apply damage (defender attempted dodge, failed — CRB p108)
                     damage = self._calc_damage(weapon_damage, current_actor["db"],
                                               attack_roll.get("successLevel"),
+                                              is_impaling=is_impaling,
                                               is_fighting_back=False)
                     new_hp = max(0, defender_actor["hp"] - damage)
                     defender_actor["hp"] = new_hp
                     defender_char.setdefault("status", {})["hp"] = new_hp
                     self._add_system_message(room,
-                        f"⚔️ {current_actor['displayName']} 用{weapon_name}攻击"
-                        f"{defender_actor['displayName']}（{defend_roll['total']}/{dodge_value} 闪避失败），"
-                        f"造成 {damage} 点伤害！HP {defender_actor['hp']}")
+                        f"⚔️ [闪避失败] {current_actor['displayName']} 用{weapon_name}攻击"
+                        f"{defender_actor['displayName']}（{defend_roll['total']}/{dodge_value} 闪避检定未通过），"
+                        f"造成 {damage} 点伤害！HP → {defender_actor['hp']}")
                     # Check major wound
                     if damage >= defender_actor["hpMax"] // 2:
                         self._add_system_message(room,
                             f"💀 {defender_actor['displayName']} 受到重伤！")
                 else:
                     self._add_system_message(room,
-                        f"💨 {defender_actor['displayName']} 闪避了 {current_actor['displayName']} 的攻击"
-                        f"（{defend_roll['total']}/{dodge_value}）")
-            else:
-                # Fight back or maneuver
+                        f"💨 [闪避成功] {defender_actor['displayName']} 闪避了 {current_actor['displayName']} "
+                        f"用{weapon_name}的攻击（{defend_roll['total']}/{dodge_value}）")
+            elif action_type == "fight_back":
+                # Fight back — contested fighting roll, attacker wins ties (CRB p108)
                 defender_skills = defender_char.get("skills", [])
                 fight_value = 25
+                defender_weapon = None
+                defender_weapon_damage = "1D3"
+                def_weapons = defender_char.get("weapons", [])
+                if def_weapons:
+                    defender_weapon = def_weapons[0]
+                    defender_weapon_damage = str(defender_weapon.get("damage", "1D3"))
                 for sk in defender_skills:
                     if sk.get("name") in ("格斗(斗殴)", "格斗", "斗殴"):
                         fight_value = sk.get("value") or 25
@@ -704,19 +751,77 @@ class RoomStore:
                 if attacker_wins:
                     damage = self._calc_damage(weapon_damage, current_actor["db"],
                                               attack_roll.get("successLevel"),
+                                              is_impaling=is_impaling,
                                               is_fighting_back=True)
                     new_hp = max(0, defender_actor["hp"] - damage)
                     defender_actor["hp"] = new_hp
                     defender_char.setdefault("status", {})["hp"] = new_hp
                     self._add_system_message(room,
-                        f"⚔️ {current_actor['displayName']} 用{weapon_name}攻击"
-                        f"{defender_actor['displayName']}，造成 {damage} 点伤害！HP → {new_hp}")
+                        f"⚔️ [反击失败] {current_actor['displayName']} 用{weapon_name}攻击"
+                        f"{defender_actor['displayName']}（反击检定未通过），造成 {damage} 点伤害！HP → {new_hp}")
+                    if damage >= defender_actor["hpMax"] // 2:
+                        self._add_system_message(room,
+                            f"💀 {defender_actor['displayName']} 受到重伤！")
+                else:
+                    # Defender won fight-back — apply defender's damage to attacker (CRB p108)
+                    def_is_impaling = self._is_impaling_weapon(defender_weapon)
+                    counter_damage = self._calc_damage(defender_weapon_damage, defender_actor.get("db", "0"),
+                                                       defend_roll.get("successLevel"),
+                                                       is_impaling=def_is_impaling,
+                                                       is_fighting_back=True)
+                    new_hp = max(0, current_actor["hp"] - counter_damage)
+                    current_actor["hp"] = new_hp
+                    attacker_char.setdefault("status", {})["hp"] = new_hp
+                    def_wname = (defender_weapon.get("name") if defender_weapon else "徒手") or "徒手"
+                    self._add_system_message(room,
+                        f"🛡️ [反击成功] {defender_actor['displayName']} 反击 {current_actor['displayName']}，"
+                        f"用{def_wname}造成 {counter_damage} 点伤害！HP → {new_hp}")
+                    if counter_damage >= current_actor["hpMax"] // 2:
+                        self._add_system_message(room,
+                            f"💀 {current_actor['displayName']} 受到重伤！")
+            elif action_type == "attack":
+                # Direct attack — no defender action roll, hit on success (CRB p102-104)
+                atk_success = attack_roll.get("successLevel") in ("critical", "extreme", "hard", "regular")
+                if atk_success:
+                    damage = self._calc_damage(weapon_damage, current_actor["db"],
+                                              attack_roll.get("successLevel"),
+                                              is_impaling=is_impaling,
+                                              is_fighting_back=False)
+                    new_hp = max(0, defender_actor["hp"] - damage)
+                    defender_actor["hp"] = new_hp
+                    defender_char.setdefault("status", {})["hp"] = new_hp
+                    self._add_system_message(room,
+                        f"⚔️ [直接攻击] {current_actor['displayName']} 用{weapon_name}"
+                        f"命中 {defender_actor['displayName']}，造成 {damage} 点伤害！HP → {new_hp}")
                     if damage >= defender_actor["hpMax"] // 2:
                         self._add_system_message(room,
                             f"💀 {defender_actor['displayName']} 受到重伤！")
                 else:
                     self._add_system_message(room,
-                        f"🛡️ {defender_actor['displayName']} 反击了 {current_actor['displayName']} 的攻击")
+                        f"❌ [直接攻击] {current_actor['displayName']} 用{weapon_name}攻击"
+                        f"{defender_actor['displayName']}，未命中（{attack_roll['total']}/{skill_value}）")
+            else:
+                # Maneuver — contested check without damage (CRB p90-92)
+                defender_skills = defender_char.get("skills", [])
+                # Use appropriate skill for maneuver; default to STR-based resistance
+                resist_value = 25
+                for attr in defender_char.get("attributes", []):
+                    if attr.get("key") == "STR":
+                        resist_value = attr.get("value") or 25
+                        break
+                defend_roll = roll_dice("1d100", target_value=resist_value, bonus_penalty=0)
+                winner = opposed_check(attack_roll["total"], skill_value,
+                                      defend_roll["total"], resist_value,
+                                      defender_wins_tie=False)
+                attacker_wins = winner.get("winner") == "actor"
+                if attacker_wins:
+                    self._add_system_message(room,
+                        f"🤼 [战术动作] {current_actor['displayName']} 对 {defender_actor['displayName']} "
+                        f"的战术动作成功！（{attack_roll['total']}/{skill_value} vs {defend_roll['total']}/{resist_value}）")
+                else:
+                    self._add_system_message(room,
+                        f"🤼 [战术动作] {defender_actor['displayName']} 抵抗了 {current_actor['displayName']} "
+                        f"的战术动作（{defend_roll['total']}/{resist_value} vs {attack_roll['total']}/{skill_value}）")
 
             # Mark current actor as acted
             current_actor["hasActedThisRound"] = True
@@ -750,8 +855,18 @@ class RoomStore:
             self._save()
             return deepcopy(cs)
 
+    def _is_impaling_weapon(self, weapon: dict | None) -> bool:
+        """Detect if a weapon is impaling based on its name (COC 7e CRB p104)."""
+        if not weapon:
+            return False
+        name = (weapon.get("name") or "").lower()
+        impaling_keywords = ["剑", "矛", "刺", "匕首", "小刀", "刀", "枪", "箭", "弩",
+                             "sword", "spear", "knife", "dagger", "blade", "bayonet",
+                             "rapier", "lance", "pike", "javelin"]
+        return any(kw in name for kw in impaling_keywords)
+
     def _calc_damage(self, weapon_damage: str, db: str, success_level: str | None,
-                     is_impaling: bool = True, is_fighting_back: bool = False) -> int:
+                     is_impaling: bool = False, is_fighting_back: bool = False) -> int:
         """COC 7e 伤害计算 (CRB p104-108).
 
         - 极难/大成功：最大武器伤害 + 最大 DB（不掷骰）
@@ -759,12 +874,14 @@ class RoomStore:
         - 反击成功时：只取最大伤害，不加穿刺骰（CRB p108）
         """
         from app.modules.dice.roller import roll_dice
+        # Normalize DB expression: _compute_db returns "+1D4" etc., but roll_dice expects "1D4"
+        db_expr = db.lstrip("+") if db else db
         wd = roll_dice(weapon_damage)["total"]
-        db_val = roll_dice(db)["total"] if db and db not in ("0", "-1", "-2") else (
-            int(db) if db and db.lstrip('-').isdigit() else 0)
+        db_val = roll_dice(db_expr)["total"] if db_expr and db_expr not in ("0", "-1", "-2") else (
+            int(db_expr) if db_expr and db_expr.lstrip('-').isdigit() else 0)
         if success_level in ("extreme", "critical"):
             max_wd = self._max_damage(weapon_damage)
-            max_db_val = self._max_damage(db) if db and db not in ("0", "-1", "-2") else 0
+            max_db_val = self._max_damage(db_expr) if db_expr and db_expr not in ("0", "-1", "-2") else 0
             if is_impaling and not is_fighting_back:
                 return max_wd + max_db_val + wd  # impale: max + weapon damage roll
             return max_wd + max_db_val  # max damage only

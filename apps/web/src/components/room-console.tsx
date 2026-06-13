@@ -53,8 +53,9 @@ export function RoomConsole() {
   const [bonusPenalty, setBonusPenalty] = useState("0"); const [hiddenRoll, setHiddenRoll] = useState(false);
   const [replyTo, setReplyTo] = useState<{ id: string; senderName: string; content: string } | null>(null);
   const [privateTarget, setPrivateTarget] = useState(""); const [npcName, setNpcName] = useState("");
-  const [whisperTarget, setWhisperTarget] = useState(""); const [messageSearch, setMessageSearch] = useState("");
+  const [messageSearch, setMessageSearch] = useState("");
   const [characterFile, setCharacterFile] = useState<File | null>(null); const [notice, setNotice] = useState("");
+  useEffect(() => { if (!notice) return; const id = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(id); }, [notice]);
   const [wsStatus, setWsStatus] = useState<"connecting" | "connected" | "disconnected">("disconnected");
   const [showRulesPanel, setShowRulesPanel] = useState(false);
   const [showSummaryPanel, setShowSummaryPanel] = useState(false);
@@ -70,12 +71,18 @@ export function RoomConsole() {
   const [showSanCheckPanel, setShowSanCheckPanel] = useState(false);
   const [showCombatPanel, setShowCombatPanel] = useState(false);
   const [showChasePanel, setShowChasePanel] = useState(false);
+  const [kpCheckCharId, setKpCheckCharId] = useState("");
+  const [attachment, setAttachment] = useState<{ url: string; filename: string; size: number; contentType: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [viewingFile, setViewingFile] = useState<{ url: string; filename: string; contentType: string } | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const currentMember = useMemo(() => room?.members.find((m) => m.id === memberId) ?? null, [memberId, room?.members]);
   useEffect(() => { if (room?.roomTheme) document.documentElement.dataset.background = room.roomTheme; }, [room?.roomTheme]);
   useEffect(() => { const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return; try { const session = JSON.parse(raw) as { roomId: string; memberId: string };
     apiRequest<RoomOnlyResponse>(`/api/rooms/${session.roomId}`).then(({ room: restoredRoom }) => {
+      if (restoredRoom.status === "ended") { window.localStorage.removeItem(STORAGE_KEY); return; }
       setRoom(restoredRoom); setMemberId(session.memberId); setNotice(""); }).catch((err) => {
         if (err && typeof err === 'object' && 'status' in err && (err as any).status === 404) {
           window.localStorage.removeItem(STORAGE_KEY);
@@ -126,23 +133,68 @@ export function RoomConsole() {
           role: joinAsSpectator ? "spectator" : "player" }) });
       enterRoom(response.room, response.currentMemberId);
     } catch (err) { setNotice("加入房间失败，请检查网络连接"); } }
+  async function uploadFile(file: File) {
+    if (!room || !memberId) return;
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("senderId", memberId);
+      form.append("file", file);
+      const res = await fetch(apiUrl(`/api/rooms/${room.id}/files`), { method: "POST", body: form });
+      if (!res.ok) { const err = await res.text(); alert(`上传失败: ${err}`); return null; }
+      return await res.json() as { url: string; filename: string; size: number; contentType: string };
+    } catch (err) { alert(`上传出错: ${err instanceof Error ? err.message : "网络错误"}`); return null; }
+    finally { setUploading(false); }
+  }
+  async function captureScreenshot() {
+    if (!room || !memberId) return;
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      await video.play();
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { stream.getTracks().forEach(t => t.stop()); return; }
+      ctx.drawImage(video, 0, 0);
+      stream.getTracks().forEach(t => t.stop());
+      const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, "image/png"));
+      if (!blob) return;
+      const file = new File([blob], `screenshot-${Date.now()}.png`, { type: "image/png" });
+      const result = await uploadFile(file);
+      if (result) setAttachment(result);
+    } catch (err) {
+      if (err instanceof Error && err.name !== "AbortError") {
+        alert(`截图失败: ${err.message}`);
+      }
+    }
+  }
   async function sendMessage(event: FormEvent<HTMLFormElement>) { event.preventDefault();
-    if (!room || !memberId || !draft.trim()) return; const content = draft.trim(); setDraft("");
-    await apiRequest(`/api/rooms/${room.id}/messages`, { method: "POST",
-      body: JSON.stringify({ senderId: memberId, content, replyTo, privateTo: privateTarget || undefined,
-        whisperTo: whisperTarget || undefined }) }); setReplyTo(null); }
+    if (!room || !memberId) return;
+    if (!draft.trim() && !attachment) return;
+    const content = draft.trim(); setDraft("");
+    try { await apiRequest(`/api/rooms/${room.id}/messages`, { method: "POST",
+      body: JSON.stringify({ senderId: memberId, content, replyTo,
+        privateTo: privateTarget || undefined, attachment: attachment || undefined }) });
+      setReplyTo(null); setAttachment(null); }
+    catch { setNotice("发送失败，请检查网络连接"); } }
   async function rollDice(event?: FormEvent<HTMLFormElement>) { if (event) event.preventDefault();
     if (!room || !memberId) return; const parsed = Number(targetValue);
     const tv: number | null = Number.isFinite(parsed) ? parsed : null;
-    await apiRequest(`/api/rooms/${room.id}/rolls`, { method: "POST",
+    try { await apiRequest(`/api/rooms/${room.id}/rolls`, { method: "POST",
       body: JSON.stringify({ rollerId: memberId, expression, label: rollLabel || null, targetValue: tv,
         bonusPenalty: Number(bonusPenalty), hidden: hiddenRoll && currentMember?.role === "keeper" }) });
     try { window.localStorage.setItem(DICE_PREFS_KEY, JSON.stringify({ targetValue: tv ?? 60, expression,
       bonusPenalty: Number(bonusPenalty) })); } catch { /* ignore */ } if (loadSettings().diceSound !== false) playDiceSound(); }
+    catch { setNotice("投骰失败，请检查网络连接"); } }
   async function rollCharacterCheck(label: string, targetValue: number, bonusPenalty?: number) {
-    if (!room || !memberId) return; await apiRequest(`/api/rooms/${room.id}/rolls`, { method: "POST",
+    if (!room || !memberId) return;
+    try { await apiRequest(`/api/rooms/${room.id}/rolls`, { method: "POST",
       body: JSON.stringify({ rollerId: memberId, expression: "1d100", label, targetValue,
         bonusPenalty: bonusPenalty ?? 0 }) }); if (loadSettings().diceSound !== false) playDiceSound(); }
+    catch { setNotice("投骰失败，请检查网络连接"); } }
   async function updateCharacter(characterId: string, basic: Record<string, string>,
     attributes: Array<{ key: string; value: number | null }>, keeperNotes: string,
     lockedFields: string[], status: Record<string, number | null>) {
@@ -159,8 +211,26 @@ export function RoomConsole() {
       const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`); setRoom(detail.room);
       setCharacterFile(null);
     } catch (err) { alert(`上传角色卡出错: ${err instanceof Error ? err.message : "网络错误"}`); } }
-  function leaveLocalRoom() { setRoom(null); setMemberId(null); window.localStorage.removeItem(STORAGE_KEY);
-    document.documentElement.dataset.background = "black"; }
+  const [showKpLeaveConfirm, setShowKpLeaveConfirm] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  async function leaveLocalRoom() {
+    if (!room || !memberId) return;
+    setLeaving(true);
+    try {
+      if (isKeeper) {
+        const form = new FormData(); form.append("editorId", memberId);
+        await fetch(apiUrl(`/api/rooms/${room.id}/delete`), { method: "POST", body: form });
+      } else {
+        const form = new FormData(); form.append("memberId", memberId);
+        await fetch(apiUrl(`/api/rooms/${room.id}/characters/remove`), { method: "POST", body: form });
+      }
+    } catch { /* ignore errors during cleanup */ }
+    finally {
+      setRoom(null); setMemberId(null); window.localStorage.removeItem(STORAGE_KEY);
+      document.documentElement.dataset.background = "black";
+      setLeaving(false); setShowKpLeaveConfirm(false);
+    }
+  }
   async function createNPC(event: FormEvent<HTMLFormElement>) { event.preventDefault();
     if (!room || !memberId || !npcName.trim()) return; const name = npcName.trim(); setNpcName("");
     const form = new FormData(); form.append("name", name); form.append("keeperId", memberId);
@@ -176,9 +246,11 @@ export function RoomConsole() {
       body: JSON.stringify({ editorId: memberId, intro: introDraft }) });
     setShowIntroEditor(false); }
   async function structuredCheck(type: "skill" | "attr", name: string, value: number, difficulty: "regular" | "hard" | "extreme", hidden: boolean) {
-    if (!room || !memberId || !myChar) return;
+    if (!room || !memberId) return;
+    const charId = isKeeper ? kpCheckCharId : myChar?.id;
+    if (!charId) return;
     await apiRequest(`/api/rooms/${room.id}/rolls/check`, { method: "POST",
-      body: JSON.stringify({ characterId: myChar.id, [type === "skill" ? "skillName" : "attributeKey"]: name, difficulty, hidden }) });
+      body: JSON.stringify({ characterId: charId, [type === "skill" ? "skillName" : "attributeKey"]: name, difficulty, hidden }) });
     if (loadSettings().diceSound !== false) playDiceSound(); }
   async function startCombat() { if (!room || !memberId) return;
     const form = new FormData(); form.append("editorId", memberId);
@@ -257,6 +329,14 @@ export function RoomConsole() {
 
   return (
     <div className="room-layout">
+      {/* Notice Banner */}
+      {notice && (
+        <div className="notice-banner" role="alert">
+          <span>{notice}</span>
+          <button onClick={() => setNotice("")} type="button" aria-label="关闭">&times;</button>
+        </div>
+      )}
+
       {/* Room Header */}
       <header className="room-header">
         <div className="room-header__info">
@@ -305,7 +385,11 @@ export function RoomConsole() {
               <option value="sepia">羊皮纸</option>
             </select>
           )}
-          <button className="button button--ghost button--sm" onClick={leaveLocalRoom} type="button">离开房间</button>
+          <button className="button button--ghost button--sm"
+            onClick={() => isKeeper ? setShowKpLeaveConfirm(true) : leaveLocalRoom()}
+            disabled={leaving} type="button">
+            {leaving ? "退出中..." : "离开房间"}
+          </button>
         </div>
       </header>
 
@@ -386,6 +470,33 @@ export function RoomConsole() {
               ))}
             </div>
           </div>
+
+          {/* Character card upload */}
+          <div className="left-toolbar__section">
+            <p className="left-toolbar__label">角色卡</p>
+            <form onSubmit={uploadCharacter} style={{ display: "flex", flexDirection: "column", gap: "6px", padding: "4px 8px" }}>
+              <label style={{ fontSize: "11px", color: "var(--text-secondary)", cursor: "pointer" }}>
+                <input type="file" accept=".xlsx,.xls,.json,.txt"
+                  onChange={(e) => { const file = e.target.files?.[0]; if (file) setCharacterFile(file); }}
+                  style={{ display: "none" }}
+                  id="character-file-input" />
+                <span className="button button--ghost button--sm" style={{ display: "inline-block", width: "100%", textAlign: "center", cursor: "pointer" }}
+                  onClick={() => document.getElementById("character-file-input")?.click()}>
+                  {characterFile ? characterFile.name : myChar ? "更换角色卡文件" : "选择角色卡文件"}
+                </span>
+              </label>
+              {characterFile && (
+                <button className="button button--primary button--sm" type="submit">
+                  {myChar ? "更新角色卡" : "上传角色卡"}
+                </button>
+              )}
+              {myChar && !characterFile && (
+                <span style={{ fontSize: "11px", color: "var(--success)", padding: "0 4px" }}>
+                  已绑定: {myChar.basic?.name || "未命名"}
+                </span>
+              )}
+            </form>
+          </div>
         </aside>
 
 
@@ -430,14 +541,32 @@ export function RoomConsole() {
                     ) : isVoice ? (
                       <VoiceMessage roomId={room.id} url={message.content} duration={0} />
                     ) : (
-                      <div dangerouslySetInnerHTML={{
-                        __html: message.content
-                          .replace(/&/g, "&amp;")
-                          .replace(/</g, "&lt;")
-                          .replace(/>/g, "&gt;")
-                          .replace(/"/g, "&quot;")
-                          .replace(/@(\S+)/g, "<span class=\"chat-bubble__mention\">@$1</span>")
-                      }} />
+                      <>
+                        {message.content && (
+                          <div dangerouslySetInnerHTML={{
+                            __html: message.content
+                              .replace(/&/g, "&amp;")
+                              .replace(/</g, "&lt;")
+                              .replace(/>/g, "&gt;")
+                              .replace(/"/g, "&quot;")
+                              .replace(/@(\S+)/g, "<span class=\"chat-bubble__mention\">@$1</span>")
+                          }} />
+                        )}
+                      </>
+                    )}
+                    {(message as any).attachment && (
+                      <div className="chat-bubble__attachment"
+                        onClick={() => setViewingFile((message as any).attachment)}
+                        style={{ cursor: "pointer" }}>
+                        {(message as any).attachment.contentType?.startsWith("image/") ? (
+                          <img src={(message as any).attachment.url} alt={(message as any).attachment.filename}
+                            className="chat-bubble__attachment-img" />
+                        ) : (
+                          <span className="chat-bubble__attachment-file">
+                            📎 {(message as any).attachment.filename} ({((message as any).attachment.size / 1024).toFixed(0)} KB)
+                          </span>
+                        )}
+                      </div>
                     )}
                   </article>
                 );
@@ -454,7 +583,19 @@ export function RoomConsole() {
                 type="button">🎯 技能检定</button>
               {showSkillDropdown && (
                 <div className="fn-dropdown">
-                  {myChar && (
+                  {isKeeper && (
+                    <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
+                      <select value={kpCheckCharId} onChange={(e) => setKpCheckCharId(e.target.value)}
+                        style={{ width: "100%", height: "30px", fontSize: "12px", borderRadius: "var(--radius)",
+                          border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", padding: "0 8px" }}>
+                        <option value="">选择角色卡...</option>
+                        {room.characters?.filter((c) => c.active !== false).map((c) => (
+                          <option key={c.id} value={c.id}>{c.basic?.name || "未命名"} {c.ownerId === memberId ? "(我)" : ""}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {(isKeeper ? kpCheckCharId : myChar) && (
                     <div className="fn-dropdown__diff">
                       <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>难度:</span>
                       {(["regular", "hard", "extreme"] as const).map((d) => (
@@ -472,7 +613,10 @@ export function RoomConsole() {
                       )}
                     </div>
                   )}
-                  {myChar?.skills.filter((s) => s.value != null).map((skill) => (
+                  {(isKeeper && kpCheckCharId
+                    ? room.characters?.find((c) => c.id === kpCheckCharId)?.skills.filter((s) => s.value != null)
+                    : myChar?.skills.filter((s) => s.value != null)
+                  )?.map((skill) => (
                     <button key={skill.name} className="fn-dropdown__item"
                       onClick={() => { structuredCheck("skill", skill.name, skill.value!, checkDifficulty, hiddenRoll && isKeeper); setShowSkillDropdown(false); }}
                       type="button">
@@ -481,7 +625,7 @@ export function RoomConsole() {
                       <span className="fn-dropdown__item-sub">{skill.half}/{skill.fifth}</span>
                     </button>
                   ))}
-                  {(!myChar || myChar.skills.filter((s) => s.value != null).length === 0) && (
+                  {!isKeeper && (!myChar || myChar.skills.filter((s) => s.value != null).length === 0) && (
                     <p style={{ padding: "8px", fontSize: "12px", color: "var(--text-muted)" }}>请先上传角色卡</p>
                   )}
                 </div>
@@ -493,7 +637,19 @@ export function RoomConsole() {
                 type="button">📊 属性检定</button>
               {showAttrDropdown && (
                 <div className="fn-dropdown">
-                  {myChar && (
+                  {isKeeper && (
+                    <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
+                      <select value={kpCheckCharId} onChange={(e) => setKpCheckCharId(e.target.value)}
+                        style={{ width: "100%", height: "30px", fontSize: "12px", borderRadius: "var(--radius)",
+                          border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", padding: "0 8px" }}>
+                        <option value="">选择角色卡...</option>
+                        {room.characters?.filter((c) => c.active !== false).map((c) => (
+                          <option key={c.id} value={c.id}>{c.basic?.name || "未命名"} {c.ownerId === memberId ? "(我)" : ""}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {(isKeeper ? kpCheckCharId : myChar) && (
                     <div className="fn-dropdown__diff">
                       <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>难度:</span>
                       {(["regular", "hard", "extreme"] as const).map((d) => (
@@ -511,7 +667,10 @@ export function RoomConsole() {
                       )}
                     </div>
                   )}
-                  {myChar?.attributes.filter((a) => a.value != null).map((attr) => (
+                  {(isKeeper && kpCheckCharId
+                    ? room.characters?.find((c) => c.id === kpCheckCharId)?.attributes.filter((a) => a.value != null)
+                    : myChar?.attributes.filter((a) => a.value != null)
+                  )?.map((attr) => (
                     <button key={attr.key} className="fn-dropdown__item"
                       onClick={() => { structuredCheck("attr", attr.key, attr.value!, checkDifficulty, hiddenRoll && isKeeper); setShowAttrDropdown(false); }}
                       type="button">
@@ -520,7 +679,7 @@ export function RoomConsole() {
                       <span className="fn-dropdown__item-sub">{attr.half}/{attr.fifth}</span>
                     </button>
                   ))}
-                  {(!myChar || myChar.attributes.filter((a) => a.value != null).length === 0) && (
+                  {!isKeeper && (!myChar || myChar.attributes.filter((a) => a.value != null).length === 0) && (
                     <p style={{ padding: "8px", fontSize: "12px", color: "var(--text-muted)" }}>请先上传角色卡</p>
                   )}
                 </div>
@@ -584,34 +743,62 @@ export function RoomConsole() {
                 )}
               </>
             )}
-            {isKeeper && (
-              <div style={{ marginLeft: "auto" }}>
-                <select value={whisperTarget} onChange={(e) => setWhisperTarget(e.target.value)}
-                  style={{ height: "28px", padding: "0 8px", fontSize: "12px", borderRadius: "14px",
-                    border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-secondary)" }}>
-                  <option value="">悄悄话</option>
-                  {room.members.filter((m) => m.id !== memberId && m.role !== "spectator").map((m) => (
-                    <option key={m.id} value={m.id}>{m.displayName} ({m.role})</option>
-                  ))}
-                </select>
-              </div>
-            )}
           </div>
 
           {/* Composer Bar */}
-          <form className="composer-bar" onSubmit={sendMessage}>
-            {replyTo && (
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px",
-                color: "var(--text-muted)", background: "var(--bg-hover)", padding: "2px 10px", borderRadius: "8px" }}>
-                回复 {replyTo.senderName}: {replyTo.content.slice(0, 40)}
-                <button type="button" onClick={() => setReplyTo(null)}
-                  style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>✕</button>
-              </div>
-            )}
-            <input className="composer-bar__input" value={draft} onChange={(e) => setDraft(e.target.value)}
-              placeholder={whisperTarget ? `悄悄话 ${room.members.find((m) => m.id === whisperTarget)?.displayName || "..."}...` : "输入消息..."}
-            />
+          <form className={`composer-bar${dragOver ? " composer-bar--drag" : ""}`} onSubmit={sendMessage}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+            onDrop={async (e) => {
+              e.preventDefault(); setDragOver(false);
+              const file = e.dataTransfer.files?.[0];
+              if (!file) return;
+              const result = await uploadFile(file);
+              if (result) setAttachment(result);
+            }}>
+            <div className="composer-bar__body">
+              {replyTo && (
+                <div className="composer-bar__reply">
+                  回复 {replyTo.senderName}: {replyTo.content.slice(0, 40)}
+                  <button type="button" onClick={() => setReplyTo(null)}>✕</button>
+                </div>
+              )}
+              {attachment && (
+                <div className="composer-bar__attachment">
+                  {attachment.contentType.startsWith("image/") ? (
+                    <img src={attachment.url} alt={attachment.filename} className="composer-bar__attachment-img" />
+                  ) : (
+                    <span className="composer-bar__attachment-file">📎 {attachment.filename} ({(attachment.size / 1024).toFixed(0)} KB)</span>
+                  )}
+                  <button type="button" onClick={() => setAttachment(null)}
+                    className="composer-bar__attachment-remove" title="移除附件">✕</button>
+                </div>
+              )}
+              <textarea className={`composer-bar__input${dragOver ? " composer-bar__input--drag" : ""}`}
+                value={draft} onChange={(e) => setDraft(e.target.value)}
+                placeholder={uploading ? "上传中..." : dragOver ? "松开以上传文件" : "输入消息... 也可拖拽文件到这里"}
+                rows={8}
+              />
+            </div>
             <div className="composer-bar__actions">
+              <button type="button" className="composer-bar__icon-btn"
+                onClick={() => document.getElementById("composer-file-input")?.click()}
+                title="上传文件">
+                📎
+              </button>
+              <button type="button" className="composer-bar__icon-btn"
+                onClick={captureScreenshot} title="截图">
+                📷
+              </button>
+              <input type="file" id="composer-file-input" style={{ display: "none" }}
+                accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.txt,.md,.json,.csv"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const result = await uploadFile(file);
+                  if (result) setAttachment(result);
+                  e.target.value = "";
+                }} />
               <div className="voice-mode-toggle">
                 <button type="button"
                   className={`voice-mode-toggle__btn ${voiceMode === "off" ? "voice-mode-toggle__btn--active" : ""}`}
@@ -624,7 +811,9 @@ export function RoomConsole() {
                   onClick={() => setVoiceMode("voice")}>自动</button>
               </div>
               <VoiceRecorder roomId={room.id} memberId={memberId!} />
-              <button className="button button--primary" type="submit">发送</button>
+              <button className="button button--primary" type="submit" disabled={uploading}>
+                {uploading ? "上传中..." : "发送"}
+              </button>
             </div>
           </form>
         </div>
@@ -643,7 +832,7 @@ export function RoomConsole() {
           </div>
           {currentMember && (
             <div style={{ padding: "8px", borderBottom: "1px solid var(--border)" }}>
-              <VoiceRoom roomId={room.id} memberId={memberId || ""} memberName={currentMember.displayName}
+              <VoiceRoom roomId={room.id} memberId={memberId || ""} memberName={currentMember?.displayName || ""}
                 memberNames={Object.fromEntries(room.members.map((m) => [m.id, m.displayName]))} />
             </div>
           )}
@@ -742,6 +931,70 @@ export function RoomConsole() {
           onClose={() => setShowChasePanel(false)} />
       )}
 
+      {/* File Viewer Modal */}
+      {viewingFile && (
+        <div className="modal-overlay" onClick={() => setViewingFile(null)}>
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "90vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+            <div className="modal-panel__header">
+              <span className="modal-panel__title" style={{ fontSize: "14px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {viewingFile.filename}
+              </span>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <a href={viewingFile.url} download={viewingFile.filename}
+                  className="button button--ghost button--sm" style={{ textDecoration: "none" }}>
+                  下载
+                </a>
+                <button className="button button--ghost button--sm" onClick={() => setViewingFile(null)} type="button">✕</button>
+              </div>
+            </div>
+            <div style={{ flex: 1, overflow: "auto", display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
+              {viewingFile.contentType.startsWith("image/") ? (
+                <img src={viewingFile.url} alt={viewingFile.filename}
+                  style={{ maxWidth: "100%", maxHeight: "75vh", objectFit: "contain" }} />
+              ) : viewingFile.contentType === "application/pdf" ? (
+                <iframe src={viewingFile.url} style={{ width: "100%", height: "80vh", border: "none" }} title={viewingFile.filename} />
+              ) : viewingFile.contentType.startsWith("text/") || viewingFile.contentType === "application/json" ? (
+                <FileContentViewer url={viewingFile.url} />
+              ) : (
+                <div style={{ padding: "40px", textAlign: "center", color: "var(--text-secondary)" }}>
+                  <p style={{ fontSize: "32px", marginBottom: "12px" }}>📄</p>
+                  <p>{viewingFile.filename}</p>
+                  <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>此文件类型暂不支持在线预览</p>
+                  <a href={viewingFile.url} download={viewingFile.filename}
+                    className="button button--primary button--sm" style={{ marginTop: "12px", display: "inline-block", textDecoration: "none" }}>
+                    下载文件
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* KP Leave Confirmation */}
+      {showKpLeaveConfirm && (
+        <div className="modal-overlay" onClick={() => setShowKpLeaveConfirm(false)}>
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "380px", textAlign: "center" }}>
+            <p style={{ fontSize: "15px", color: "var(--text)", margin: "0 0 8px", fontWeight: 600 }}>
+              确定要离开房间吗
+            </p>
+            <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: "0 0 20px" }}>
+              之前的记录均不会保存
+            </p>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+              <button className="button button--ghost" style={{ borderRadius: "12px", padding: "8px 32px" }}
+                onClick={leaveLocalRoom} type="button" disabled={leaving}>
+                {leaving ? "退出中..." : "确定"}
+              </button>
+              <button className="button button--danger" style={{ borderRadius: "12px", padding: "8px 32px" }}
+                onClick={() => setShowKpLeaveConfirm(false)} type="button" disabled={leaving}>
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Character Card Drawer */}
       {selectedChar && (
         <div className="modal-overlay" onClick={() => setSelectedCharId(null)}>
@@ -793,6 +1046,24 @@ function DiceRollView({ roll }: { roll: DiceRollResult }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function FileContentViewer({ url }: { url: string }) {
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    fetch(url).then(r => r.text()).then(setText).catch(() => setError(true));
+  }, [url]);
+  if (error) return <p style={{ padding: "20px", color: "var(--text-muted)" }}>无法加载文件内容</p>;
+  if (text === null) return <p style={{ padding: "20px", color: "var(--text-muted)" }}>加载中...</p>;
+  return (
+    <pre style={{
+      width: "100%", maxHeight: "75vh", overflow: "auto", padding: "16px",
+      background: "var(--bg)", color: "var(--text)", fontSize: "13px",
+      lineHeight: 1.6, borderRadius: "var(--radius)", margin: 0,
+      whiteSpace: "pre-wrap", wordBreak: "break-word",
+    }}>{text}</pre>
   );
 }
 
