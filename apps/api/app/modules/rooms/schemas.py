@@ -7,16 +7,16 @@ class CamelModel(BaseModel):
 
 
 class CreateRoomRequest(CamelModel):
-    name: str = Field(min_length=1, max_length=80)
-    keeper_name: str = Field(alias="keeperName", min_length=1, max_length=40)
-    password: Optional[str] = Field(default=None, max_length=32)
+    name: str = Field(min_length=1, max_length=80, pattern=r"\S")
+    keeper_name: str = Field(alias="keeperName", min_length=1, max_length=40, pattern=r"\S")
+    password: Optional[str] = Field(default=None, min_length=1, max_length=32)
     role: Optional[str] = Field(default="player")
 
 
 class JoinRoomRequest(CamelModel):
     invite_code: str = Field(alias="inviteCode", min_length=4, max_length=16)
-    display_name: str = Field(alias="displayName", min_length=1, max_length=40)
-    password: Optional[str] = Field(default=None, max_length=32)
+    display_name: str = Field(alias="displayName", min_length=1, max_length=40, pattern=r"\S")
+    password: Optional[str] = Field(default=None, min_length=1, max_length=32)
     role: Optional[str] = Field(default="player")
 
 

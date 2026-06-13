@@ -14,10 +14,29 @@ NS = {
 
 class XlsxReader:
     def __init__(self, content: bytes) -> None:
-        self.archive = ZipFile(BytesIO(content))
+        self._bytes = BytesIO(content)
+        self.archive = ZipFile(self._bytes)
         self.shared_strings = self._read_shared_strings()
         self.sheets = self._read_sheets()
         self.defined_names = self._read_defined_names()
+
+    def close(self) -> None:
+        """Explicitly close the underlying ZipFile to release OS resources."""
+        self.archive.close()
+        self._bytes.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def cells(self, sheet_name: str) -> dict[str, str]:
         path = self.sheets[sheet_name]
@@ -67,8 +86,11 @@ class XlsxReader:
         return strings
 
     def _read_sheets(self) -> dict[str, str]:
-        workbook = ET.fromstring(self.archive.read("xl/workbook.xml"))
-        rels = ET.fromstring(self.archive.read("xl/_rels/workbook.xml.rels"))
+        try:
+            workbook = ET.fromstring(self.archive.read("xl/workbook.xml"))
+            rels = ET.fromstring(self.archive.read("xl/_rels/workbook.xml.rels"))
+        except KeyError as error:
+            raise ValueError("Not a valid .xlsx file") from error
         rel_targets = {rel.attrib["Id"]: rel.attrib["Target"] for rel in rels}
         sheets: dict[str, str] = {}
 

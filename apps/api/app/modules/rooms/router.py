@@ -173,10 +173,14 @@ async def upload_voice_message(
     duration: str = Form("0"),
     file: UploadFile = File(...),
 ) -> dict:
+    # Check size before reading the entire file into memory
+    max_size = 50 * 1024 * 1024  # 50 MB
+    if file.size is not None and file.size > max_size:
+        raise HTTPException(status_code=400, detail="Audio file too large (max 50 MB)")
     content = await file.read()
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="Empty audio file")
-    if len(content) > 50 * 1024 * 1024:
+    if len(content) > max_size:
         raise HTTPException(status_code=400, detail="Audio file too large (max 50 MB)")
 
     ext = ".webm"
@@ -217,6 +221,8 @@ async def upload_voice_message(
 
 @router.get("/rooms/{room_id}/voice/{filename:path}")
 async def get_voice_file(room_id: str, filename: str):
+    if ".." in filename or filename.startswith("/") or filename.startswith("\\"):
+        raise HTTPException(status_code=400, detail="Invalid filename")
     from fastapi.responses import FileResponse
     voice_path = settings.data_dir / "uploads" / room_id / filename
     if not voice_path.exists():
@@ -305,29 +311,51 @@ async def save_summary_route(room_id: str, editor_id: str = Form(..., alias="edi
 @router.post("/rooms/{room_id}/coc/opposed")
 async def opposed_roll(room_id: str, expression: str = Form("1d100"), target: str = Form("50"), opponentExpression: str = Form("1d100"), opponentTarget: str = Form("50")) -> dict:
     from app.modules.dice.roller import roll_dice as rd
-    actor = rd(expression, target_value=int(target))
-    opponent = rd(opponentExpression, target_value=int(opponentTarget))
-    result = opposed_check(actor["total"], int(target), opponent["total"], int(opponentTarget))
+    try:
+        target_int = int(target)
+        opp_target_int = int(opponentTarget)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid numeric value for target")
+    actor = rd(expression, target_value=target_int)
+    opponent = rd(opponentExpression, target_value=opp_target_int)
+    result = opposed_check(actor["total"], target_int, opponent["total"], opp_target_int)
     return {"actor": actor, "opponent": opponent, "result": result}
 
 @router.post("/rooms/{room_id}/coc/heal")
 async def heal_check(room_id: str, hpCurrent: str = Form("0"), hpMax: str = Form("10"), healType: str = Form("first_aid")) -> dict:
-    chp, mhp = int(hpCurrent), int(hpMax)
+    try:
+        chp, mhp = int(hpCurrent), int(hpMax)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid numeric value for HP")
     if healType == "medicine":
         return medicine_check(chp, mhp)
     return first_aid_check(chp, mhp)
 
 @router.post("/rooms/{room_id}/coc/wound")
 async def wound_check(room_id: str, damage: str = Form("0"), hpMax: str = Form("10")) -> dict:
-    return major_wound_check(int(damage), int(hpMax))
+    try:
+        damage_int = int(damage)
+        hp_max_int = int(hpMax)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid numeric value for damage or HP")
+    return major_wound_check(damage_int, hp_max_int)
 
 @router.post("/rooms/{room_id}/coc/insanity")
 async def insanity_roll(room_id: str, sanLoss: str = Form("0"), currentSAN: str = Form("50"), maxSAN: str = Form("50")) -> dict:
-    return insanity_check(int(sanLoss), int(currentSAN), int(maxSAN))
+    try:
+        san_loss_int = int(sanLoss)
+        cur_san_int = int(currentSAN)
+        max_san_int = int(maxSAN)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid numeric value for SAN")
+    return insanity_check(san_loss_int, cur_san_int, max_san_int)
 
 @router.post("/rooms/{room_id}/coc/malfunction")
 async def malf_check(room_id: str, total: str = Form("0"), malfValue: str = Form("96")) -> dict:
-    return weapon_malfunction_check(int(total), int(malfValue))
+    try:
+        return weapon_malfunction_check(int(total), int(malfValue))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid numeric value for malfunction check")
 
 # ---------- Structured Skill/Attribute Check ----------
 
@@ -412,8 +440,11 @@ async def start_combat(room_id: str, editor_id: str = Form(..., alias="editorId"
 
 @router.get("/rooms/{room_id}/combat/state")
 async def get_combat_state(room_id: str) -> dict:
-    cs = store.get_combat_state(room_id)
-    return {"combatState": cs}
+    try:
+        cs = store.get_combat_state(room_id)
+        return {"combatState": cs}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Room not found")
 
 
 @router.post("/rooms/{room_id}/combat/action")
@@ -464,8 +495,11 @@ async def start_chase(room_id: str, editor_id: str = Form(..., alias="editorId")
 
 @router.get("/rooms/{room_id}/chase/state")
 async def get_chase_state(room_id: str) -> dict:
-    cs = store.get_chase_state(room_id)
-    return {"chaseState": cs}
+    try:
+        cs = store.get_chase_state(room_id)
+        return {"chaseState": cs}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Room not found")
 
 
 @router.post("/rooms/{room_id}/chase/action")
@@ -561,7 +595,7 @@ async def room_socket(websocket: WebSocket, room_id: str, member_id: str) -> Non
                         "from": member_id,
                         "muted": payload.get("muted"),
                     }, store)
-    except (WebSocketDisconnect, RuntimeError):
+    except (WebSocketDisconnect, RuntimeError, _json.JSONDecodeError):
         pass
     finally:
         heartbeat_task.cancel()

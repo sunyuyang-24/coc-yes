@@ -80,7 +80,9 @@ export function SummaryPanel({ room, memberId, isKeeper }: Props) {
     const a = document.createElement("a");
     a.href = url;
     a.download = room.name + "_summary.md";
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
     setNotice("总结已下载！");
   }, [draft, room.name]);

@@ -70,6 +70,12 @@ export function CharacterCardView({
       Object.fromEntries(character.attributes.map((attribute) => [attribute.key, String(attribute.value ?? "")]))
     );
     setKeeperNotes(character.keeperNotes || "");
+    setStatusDrafts(() => {
+      const s: Record<string, number | null> = {};
+      for (const [k, v] of Object.entries(character.status)) s[k] = v as number | null;
+      return s;
+    });
+    setLockedFields(character.lockedFields ?? []);
     setEditing(true);
   }
 
@@ -124,10 +130,10 @@ export function CharacterCardView({
       {editing ? (
         <form className="character-editor" onSubmit={saveEdit}>
           <div className="character-editor__grid">
-            <label>??<input value={basicDraft.name} onChange={(event) => setBasicDraft((draft) => ({ ...draft, name: event.target.value }))} /></label>
-            <label>??<input value={basicDraft.occupation} onChange={(event) => setBasicDraft((draft) => ({ ...draft, occupation: event.target.value }))} /></label>
-            <label>??<input value={basicDraft.age} onChange={(event) => setBasicDraft((draft) => ({ ...draft, age: event.target.value }))} /></label>
-            <label>??<input value={basicDraft.gender} onChange={(event) => setBasicDraft((draft) => ({ ...draft, gender: event.target.value }))} /></label>
+            <label>姓名<input value={basicDraft.name} onChange={(event) => setBasicDraft((draft) => ({ ...draft, name: event.target.value }))} /></label>
+            <label>职业<input value={basicDraft.occupation} onChange={(event) => setBasicDraft((draft) => ({ ...draft, occupation: event.target.value }))} /></label>
+            <label>年龄<input value={basicDraft.age} onChange={(event) => setBasicDraft((draft) => ({ ...draft, age: event.target.value }))} /></label>
+            <label>性别<input value={basicDraft.gender} onChange={(event) => setBasicDraft((draft) => ({ ...draft, gender: event.target.value }))} /></label>
           </div>
           <div className="attribute-editor">
             {character.attributes.map((attribute) => (
@@ -305,7 +311,4 @@ export function CharacterCardView({
   );
 }
 
-function firstFilled(values: Record<string, string>) {
-  return Object.values(values).find(Boolean) ?? "";
-}
 

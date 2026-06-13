@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ChaseState, CharacterCard } from "@coc-yes/shared";
 import { apiUrl } from "@/lib/api";
 
@@ -19,6 +19,12 @@ export function ChasePanel({ roomId, memberId, chase, characters, isKeeper, onCl
   const [weaponIndex, setWeaponIndex] = useState<number | undefined>(undefined);
   const [hidden, setHidden] = useState(false);
   const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    if (participantId && !chase.participants.find((p) => p.memberId === participantId)) {
+      setParticipantId("");
+    }
+  }, [chase.participants, participantId]);
 
   async function act() {
     if (sending || !participantId) return;

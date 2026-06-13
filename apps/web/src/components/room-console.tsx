@@ -8,7 +8,7 @@ import { VoiceRecorder } from "@/components/voice-recorder";
 import { VoiceRoom } from "@/components/voice-room";
 import { VoiceMessage } from "@/components/voice-message";
 import { SummaryPanel } from "@/components/summary-panel";
-import { SettingsPanel } from "@/components/settings-panel";
+import { SettingsPanel, loadSettings } from "@/components/settings-panel";
 import { SanCheckPanel } from "@/components/san-check-panel";
 import { CombatPanel } from "@/components/combat-panel";
 import { ChasePanel } from "@/components/chase-panel";
@@ -76,53 +76,73 @@ export function RoomConsole() {
   useEffect(() => { const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return; try { const session = JSON.parse(raw) as { roomId: string; memberId: string };
     apiRequest<RoomOnlyResponse>(`/api/rooms/${session.roomId}`).then(({ room: restoredRoom }) => {
-      setRoom(restoredRoom); setMemberId(session.memberId); setNotice(""); }).catch(() => {
-        window.localStorage.removeItem(STORAGE_KEY); }); } catch { window.localStorage.removeItem(STORAGE_KEY); } }, []);
+      setRoom(restoredRoom); setMemberId(session.memberId); setNotice(""); }).catch((err) => {
+        if (err && typeof err === 'object' && 'status' in err && (err as any).status === 404) {
+          window.localStorage.removeItem(STORAGE_KEY);
+        }
+      }); } catch { /* ignore */ } }, []);
   useEffect(() => { if (!room || !memberId) return; let socket: WebSocket;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null; let mounted = true;
     function connect() { if (!mounted || !room) return; setWsStatus("connecting");
       const url = `${wsUrl(`/api/rooms/${room.id}/ws`)}?member_id=${encodeURIComponent(memberId!)}`;
       socket = new WebSocket(url);
-      socket.onmessage = (event) => { const payload = JSON.parse(event.data) as SocketEvent;
-        if (payload.type === "room_state" || payload.type === "room_update") setRoom(payload.room); };
-      socket.onopen = () => { setWsStatus("connected"); };
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data) as SocketEvent;
+          if (payload.type === "room_state" || payload.type === "room_update") setRoom(payload.room);
+        } catch (err) {
+          console.error("Invalid WebSocket message:", err);
+        }
+      };
+      socket.onopen = () => { setWsStatus("connected"); if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; } };
+      socket.onerror = (err) => console.error("WebSocket error:", err);
       socket.onclose = () => { if (!mounted) return; setWsStatus("disconnected"); let delay = 3000;
         const attempt = () => { if (!mounted) return; reconnectTimer = setTimeout(() => { connect(); }, delay);
           delay = Math.min(delay * 2, 30000); }; attempt(); }; }
     connect(); return () => { mounted = false; if (reconnectTimer) clearTimeout(reconnectTimer); socket.close(); }; }, [memberId, room?.id]);
-  useEffect(() => { messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [room?.messages.length]);
+  useEffect(() => { if (loadSettings().autoScrollChat !== false) { messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); } }, [room?.messages.length]);
 
 
-  const filteredMessages = room ? room.messages.filter((m) => {
-    if (!messageSearch) return true; const q = messageSearch.toLowerCase();
-    return m.content.toLowerCase().includes(q) || m.senderName.toLowerCase().includes(q) ||
-      (m.roll?.label && m.roll.label.toLowerCase().includes(q)); }) : [];
+  const filteredMessages = useMemo(() => {
+    if (!room) return [];
+    if (!messageSearch) return room.messages;
+    const q = messageSearch.toLowerCase();
+    return room.messages.filter((m) =>
+      m.content.toLowerCase().includes(q) || m.senderName.toLowerCase().includes(q) ||
+      (m.roll?.label && m.roll.label.toLowerCase().includes(q))
+    );
+  }, [room?.messages, messageSearch]);
 
   async function createRoom(event: FormEvent<HTMLFormElement>) { event.preventDefault();
-    const response = await apiRequest<RoomResponse>("/api/rooms", { method: "POST",
-      body: JSON.stringify({ name: roomName, keeper_name: keeperName, password: roomPassword || undefined }) });
-    enterRoom(response.room, response.currentMemberId); }
+    try {
+      const response = await apiRequest<RoomResponse>("/api/rooms", { method: "POST",
+        body: JSON.stringify({ name: roomName, keeper_name: keeperName, password: roomPassword || undefined }) });
+      enterRoom(response.room, response.currentMemberId);
+    } catch (err) { setNotice("创建房间失败，请检查网络连接"); } }
   async function joinRoom(event: FormEvent<HTMLFormElement>) { event.preventDefault();
-    const response = await apiRequest<RoomResponse>("/api/rooms/join", { method: "POST",
-      body: JSON.stringify({ inviteCode, displayName: playerName, password: joinPassword || undefined,
-        role: joinAsSpectator ? "spectator" : "player" }) });
-    enterRoom(response.room, response.currentMemberId); }
+    try {
+      const response = await apiRequest<RoomResponse>("/api/rooms/join", { method: "POST",
+        body: JSON.stringify({ inviteCode, displayName: playerName, password: joinPassword || undefined,
+          role: joinAsSpectator ? "spectator" : "player" }) });
+      enterRoom(response.room, response.currentMemberId);
+    } catch (err) { setNotice("加入房间失败，请检查网络连接"); } }
   async function sendMessage(event: FormEvent<HTMLFormElement>) { event.preventDefault();
     if (!room || !memberId || !draft.trim()) return; const content = draft.trim(); setDraft("");
     await apiRequest(`/api/rooms/${room.id}/messages`, { method: "POST",
       body: JSON.stringify({ senderId: memberId, content, replyTo, privateTo: privateTarget || undefined,
         whisperTo: whisperTarget || undefined }) }); setReplyTo(null); }
   async function rollDice(event?: FormEvent<HTMLFormElement>) { if (event) event.preventDefault();
-    if (!room || !memberId) return; let tv: number | null = targetValue ? Number(targetValue) : null;
+    if (!room || !memberId) return; const parsed = Number(targetValue);
+    const tv: number | null = Number.isFinite(parsed) ? parsed : null;
     await apiRequest(`/api/rooms/${room.id}/rolls`, { method: "POST",
       body: JSON.stringify({ rollerId: memberId, expression, label: rollLabel || null, targetValue: tv,
         bonusPenalty: Number(bonusPenalty), hidden: hiddenRoll && currentMember?.role === "keeper" }) });
     try { window.localStorage.setItem(DICE_PREFS_KEY, JSON.stringify({ targetValue: tv ?? 60, expression,
-      bonusPenalty: Number(bonusPenalty) })); } catch { /* ignore */ } playDiceSound(); }
+      bonusPenalty: Number(bonusPenalty) })); } catch { /* ignore */ } if (loadSettings().diceSound !== false) playDiceSound(); }
   async function rollCharacterCheck(label: string, targetValue: number, bonusPenalty?: number) {
     if (!room || !memberId) return; await apiRequest(`/api/rooms/${room.id}/rolls`, { method: "POST",
       body: JSON.stringify({ rollerId: memberId, expression: "1d100", label, targetValue,
-        bonusPenalty: bonusPenalty ?? 0 }) }); playDiceSound(); }
+        bonusPenalty: bonusPenalty ?? 0 }) }); if (loadSettings().diceSound !== false) playDiceSound(); }
   async function updateCharacter(characterId: string, basic: Record<string, string>,
     attributes: Array<{ key: string; value: number | null }>, keeperNotes: string,
     lockedFields: string[], status: Record<string, number | null>) {
@@ -159,7 +179,7 @@ export function RoomConsole() {
     if (!room || !memberId || !myChar) return;
     await apiRequest(`/api/rooms/${room.id}/rolls/check`, { method: "POST",
       body: JSON.stringify({ characterId: myChar.id, [type === "skill" ? "skillName" : "attributeKey"]: name, difficulty, hidden }) });
-    playDiceSound(); }
+    if (loadSettings().diceSound !== false) playDiceSound(); }
   async function startCombat() { if (!room || !memberId) return;
     const form = new FormData(); form.append("editorId", memberId);
     try { await fetch(apiUrl(`/api/rooms/${room.id}/combat/start`), { method: "POST", body: form }); }
@@ -411,7 +431,12 @@ export function RoomConsole() {
                       <VoiceMessage roomId={room.id} url={message.content} duration={0} />
                     ) : (
                       <div dangerouslySetInnerHTML={{
-                        __html: message.content.replace(/@(\S+)/g, "<span class=\"chat-bubble__mention\">@$1</span>")
+                        __html: message.content
+                          .replace(/&/g, "&amp;")
+                          .replace(/</g, "&lt;")
+                          .replace(/>/g, "&gt;")
+                          .replace(/"/g, "&quot;")
+                          .replace(/@(\S+)/g, "<span class=\"chat-bubble__mention\">@$1</span>")
                       }} />
                     )}
                   </article>

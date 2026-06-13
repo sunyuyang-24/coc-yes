@@ -67,19 +67,24 @@ def _roll_coc_d100(bonus_penalty: int) -> tuple[int, list[dict]]:
     tens_rolls = [_RNG.randint(0, 9) for _ in range(tens_count)]
     ones = _RNG.randint(0, 9)
 
+    # Compute effective d100 result for each tens die
+    # 00 + 0 = 100, 00 + 1 = 1, 10 + 0 = 10, etc.
+    def _effective(tens: int) -> int:
+        return 100 if tens == 0 and ones == 0 else tens * 10 + ones
+
+    scores = [_effective(t) for t in tens_rolls]
+
     if bonus_penalty > 0:
-        chosen_tens = min(tens_rolls)
+        best_idx = scores.index(min(scores))
+        chosen_tens = tens_rolls[best_idx]
+        total = scores[best_idx]
     elif bonus_penalty < 0:
-        chosen_tens = max(tens_rolls)
+        worst_idx = scores.index(max(scores))
+        chosen_tens = tens_rolls[worst_idx]
+        total = scores[worst_idx]
     else:
         chosen_tens = tens_rolls[0]
-
-    total = chosen_tens * 10 + ones
-
-    # Clamp 0 to 100 for d100 (00 = 100), but only for non-bonus contexts
-    # bonus dice with all-zero tens + ones=0 should yield 0 (critical), not 100
-    if total == 0 and bonus_penalty <= 0:
-        total = 100
+        total = _effective(chosen_tens)
 
     return total, [
         {
@@ -95,14 +100,7 @@ def _roll_coc_d100(bonus_penalty: int) -> tuple[int, list[dict]]:
     ]
 
 
-def _classify_coc_success(total: int, target_value: int | None) -> dict:
-    if target_value is None:
-        return {
-            "level": None,
-            "label": None,
-            "isSuccess": None,
-        }
-
+def _classify_coc_success(total: int, target_value: int) -> dict:
     if total == 1:
         return {"level": "critical", "label": "大成功", "isSuccess": True}
 
@@ -136,26 +134,40 @@ def _format_modifier(modifier: int) -> str:
 # COC 7e Advanced Rules
 # ---------------------------------------------------------------------------
 
-def opposed_check(actor_total: int, actor_target: int, opponent_total: int, opponent_target: int) -> dict:
-    """COC 7e 对抗检定 (CRB p90-92)：
-    双方各投 1d100，比较成功等级。成功等级高者胜。
-    同等级则比较出目（越接近目标值越好）。
-    """
-    a_level = _get_success_level_order(actor_total, actor_target)
-    o_level = _get_success_level_order(opponent_total, opponent_target)
+def opposed_check(actor_total: int, actor_target: int, opponent_total: int, opponent_target: int,
+                  defender_wins_tie: bool = False) -> dict:
+    """COC 7e 对抗检定 (CRB p90-92)。
 
-    if a_level > o_level:
-        return {"winner": "actor", "actorLevel": a_level, "opponentLevel": o_level, "reason": "成功等级更高"}
-    elif o_level > a_level:
-        return {"winner": "opponent", "actorLevel": a_level, "opponentLevel": o_level, "reason": "成功等级更高"}
-    # 同等级比较出目质量
-    a_quality = actor_total / max(actor_target, 1)
-    o_quality = opponent_total / max(opponent_target, 1)
-    if a_quality < o_quality:
-        return {"winner": "actor", "actorLevel": a_level, "opponentLevel": o_level, "reason": "同等级出目更优"}
-    elif o_quality < a_quality:
-        return {"winner": "opponent", "actorLevel": a_level, "opponentLevel": o_level, "reason": "同等级出目更优"}
-    return {"winner": "tie", "actorLevel": a_level, "opponentLevel": o_level, "reason": "完全相同"}
+    双方各投 1d100，比较成功等级。成功等级高者胜。
+    同等级：技能值高者胜（CRB p90）。若技能相同则平局。
+
+    战斗特例（CRB p108）：
+    - 闪避：平局时防守方胜（defender_wins_tie=True）
+    - 反击：平局时攻击方胜（defender_wins_tie=False）
+    """
+    a_order = _get_success_level_order(actor_total, actor_target)
+    o_order = _get_success_level_order(opponent_total, opponent_target)
+
+    def _winner_by_skill():
+        if actor_target > opponent_target:
+            return "actor"
+        elif opponent_target > actor_target:
+            return "opponent"
+        return "tie"
+
+    if a_order > o_order:
+        return {"winner": "actor", "actorLevel": a_order, "opponentLevel": o_order, "reason": "成功等级更高"}
+    elif o_order > a_order:
+        return {"winner": "opponent", "actorLevel": a_order, "opponentLevel": o_order, "reason": "成功等级更高"}
+
+    # Same success level: higher skill wins (CRB p90), or tie rule for combat
+    if defender_wins_tie:
+        winner = "opponent"  # dodger wins ties
+    else:
+        winner = _winner_by_skill()
+
+    return {"winner": winner, "actorLevel": a_order, "opponentLevel": o_order,
+            "reason": f"同等级{'（防守方胜）' if defender_wins_tie else ''}，技能值{'更高' if winner != 'tie' else '相同'}"}
 
 
 def pushing_check(total: int, target: int, is_pushed: bool = False) -> dict:
@@ -164,6 +176,8 @@ def pushing_check(total: int, target: int, is_pushed: bool = False) -> dict:
     返回推动是否允许及建议文本。
     """
     result = _classify_coc_success(total, target)
+    if result["level"] == "fumble":
+        return {"canPush": False, "message": "大失败无法推动检定（CRB p84）"}
     if result["isSuccess"]:
         return {"canPush": False, "message": "检定已成功，无需推动"}
     if is_pushed and not result["isSuccess"]:
@@ -199,7 +213,7 @@ def major_wound_check(damage: int, hp_max: int) -> dict:
     """COC 7e 重伤判定 (CRB p124)：
     单次伤害 >= HP 最大值的一半即为重伤。
     """
-    is_major = damage >= (hp_max // 2)
+    is_major = damage * 2 >= hp_max
     return {
         "isMajorWound": is_major,
         "threshold": hp_max // 2,
@@ -207,10 +221,12 @@ def major_wound_check(damage: int, hp_max: int) -> dict:
     }
 
 
-def insanity_check(san_loss: int, current_san: int, max_san: int) -> dict:
-    """COC 7e 疯狂判定 (CRB p156-164)：
-    - 单次 SAN 损失 >= 5 → 临时疯狂
-    - SAN 归零 → 不定疯狂
+def insanity_check(san_loss: int, current_san: int, max_san: int = 99, cumulative_daily_loss: int = 0, int_value: int = 50) -> dict:
+    """COC 7e 疯狂判定 (CRB p156-164).
+
+    - SAN=0: 永久疯狂，调查员退场
+    - 单次损失>=5且SAN>0: 需投INT检定，成功则临时疯狂
+    - 单日累计损失 >= 当前SAN的1/5: 不定期疯狂
     """
     result = {
         "sanLoss": san_loss,
@@ -218,14 +234,31 @@ def insanity_check(san_loss: int, current_san: int, max_san: int) -> dict:
         "maxSAN": max_san,
         "temporaryInsanity": False,
         "indefiniteInsanity": False,
+        "permanentInsanity": False,
+        "needsIntRoll": False,
         "message": "",
     }
-    if san_loss >= 5 and current_san > 0:
-        result["temporaryInsanity"] = True
-        result["message"] = f"临时疯狂！单次 SAN 损失 {san_loss} >= 5（CRB p156）"
+
+    # Permanent: SAN reaches 0 (CRB p156)
     if current_san <= 0:
+        result["permanentInsanity"] = True
+        result["message"] = "永久疯狂！SAN 归零，调查员退场（CRB p156）"
+        return result
+
+    # Temporary: >= 5 SAN loss in one event triggers INT check (CRB p155)
+    if san_loss >= 5:
+        result["needsIntRoll"] = True
+        result["message"] = f"SAN 损失 {san_loss} >= 5，需 INT 检定（CRB p155）"
+
+    # Indefinite: cumulative daily loss >= 1/5 of current SAN (CRB p156)
+    daily_threshold = max(current_san // 5, 1)
+    if cumulative_daily_loss + san_loss >= daily_threshold:
         result["indefiniteInsanity"] = True
-        result["message"] = f"不定疯狂！SAN 已归零（CRB p164）"
+        if result["message"]:
+            result["message"] += f"；单日累计损失已达阈值 {daily_threshold}"
+        else:
+            result["message"] = f"不定期疯狂！单日累计 SAN 损失 >= {daily_threshold}（CRB p156）"
+
     return result
 
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CombatState, CharacterCard } from "@coc-yes/shared";
 import { apiUrl } from "@/lib/api";
 
@@ -20,6 +20,11 @@ export function CombatPanel({ roomId, memberId, combat, characters, isKeeper, on
   const [weaponIndex, setWeaponIndex] = useState(0);
   const [hidden, setHidden] = useState(false);
   const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    const nextId = combat.actors[combat.currentActorIndex]?.memberId;
+    if (nextId) setAttackerId(nextId);
+  }, [combat.currentActorIndex, combat.actors]);
 
   const currentActor = combat.actors[combat.currentActorIndex];
 
