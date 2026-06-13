@@ -16,10 +16,12 @@ export function SanCheckPanel({ roomId, character, isKeeper, onClose }: Props) {
   const [failureLoss, setFailureLoss] = useState("1D6");
   const [hidden, setHidden] = useState(false);
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
 
   async function submit() {
     if (sending) return;
     setSending(true);
+    setError("");
     try {
       await apiRequest(`/api/rooms/${roomId}/rolls/san-check`, {
         method: "POST",
@@ -31,6 +33,8 @@ export function SanCheckPanel({ roomId, character, isKeeper, onClose }: Props) {
         }),
       });
       onClose();
+    } catch (err) {
+      setError(`SAN检定失败: ${err instanceof Error ? err.message : "网络错误"}`);
     } finally {
       setSending(false);
     }
@@ -87,6 +91,9 @@ export function SanCheckPanel({ roomId, character, isKeeper, onClose }: Props) {
             </label>
           )}
 
+          {error && (
+            <p style={{ color: "var(--error)", fontSize: "12px", textAlign: "center" }}>{error}</p>
+          )}
           <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
             <button className="button button--ghost button--sm" onClick={onClose} type="button">取消</button>
             <button className="button button--primary" onClick={submit} disabled={sending} type="button">

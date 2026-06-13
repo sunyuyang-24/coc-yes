@@ -1,7 +1,8 @@
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
 export function apiUrl(path: string) {
-  return `${API_BASE_URL}${path}`;
+  const base = API_BASE_URL.replace(/\/+$/, "");
+  return `${base}${path}`;
 }
 
 export function wsUrl(path: string) {
@@ -25,15 +26,22 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   const headers = new Headers(init?.headers);
   headers.set("Content-Type", "application/json");
 
-  const response = await fetch(apiUrl(path), {
-    ...init,
-    headers
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(apiUrl(path), {
+      ...init,
+      headers,
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || `HTTP ${response.status}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `HTTP ${response.status}`);
+    }
+
+    return response.json() as Promise<T>;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return response.json() as Promise<T>;
 }

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections import defaultdict
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
+
+logger = logging.getLogger(__name__)
 
 
 class RoomConnectionManager:
@@ -38,7 +41,8 @@ class RoomConnectionManager:
                             sanitized = store.get_room_sanitized(payload["room"]["id"], member_id)
                             data = {"type": "room_update", "room": sanitized}
                         except Exception:
-                            pass
+                            logger.exception("Failed to sanitize room data for broadcast; falling back to empty payload")
+                            data = {"type": "room_update", "room": {}, "error": "sanitization_failed"}
                 await websocket.send_json(data)
             except (WebSocketDisconnect, RuntimeError):
                 stale.append(websocket)

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RuleSearchRequest(BaseModel):
-    keyword: str
+    keyword: str = Field(min_length=1, max_length=200)
     limit: int = 15
 
 

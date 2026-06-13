@@ -33,6 +33,7 @@ export function VoiceRoom({ roomId, memberId, memberName, memberNames, isKeeper 
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const joiningRef = useRef(false);
+  const intentionalLeaveRef = useRef(false);
 
   const updatePeers = useCallback((updater: (prev: VoicePeer[]) => VoicePeer[]) => {
     setPeers(prev => {
@@ -114,7 +115,6 @@ export function VoiceRoom({ roomId, memberId, memberName, memberNames, isKeeper 
       if (pc.connectionState === "failed") {
         // Attempt ICE restart before giving up
         if (isPolite) {
-          pc.restartIce();
           pc.createOffer({ iceRestart: true }).then(offer => {
             pc.setLocalDescription(offer);
             wsRef.current?.send(JSON.stringify({
@@ -242,8 +242,11 @@ export function VoiceRoom({ roomId, memberId, memberName, memberNames, isKeeper 
       updatePeers(() => []);
       setJoined(false);
       joiningRef.current = false;
-      localStreamRef.current?.getTracks().forEach(t => t.stop());
-      localStreamRef.current = null;
+      if (intentionalLeaveRef.current) {
+        localStreamRef.current?.getTracks().forEach(t => t.stop());
+        localStreamRef.current = null;
+        intentionalLeaveRef.current = false;
+      }
     };
 
     ws.onerror = () => {
@@ -343,6 +346,7 @@ export function VoiceRoom({ roomId, memberId, memberName, memberNames, isKeeper 
   const leaveVoice = useCallback(() => {
     // 清理重连定时器
     if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+    intentionalLeaveRef.current = true;
     localStreamRef.current?.getTracks().forEach(t => t.stop());
     localStreamRef.current = null;
     peersRef.current.forEach(p => {
@@ -360,6 +364,7 @@ export function VoiceRoom({ roomId, memberId, memberName, memberNames, isKeeper 
   useEffect(() => {
     return () => {
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      intentionalLeaveRef.current = true;
       localStreamRef.current?.getTracks().forEach(t => t.stop());
       peersRef.current.forEach(p => {
         p.connection.close();

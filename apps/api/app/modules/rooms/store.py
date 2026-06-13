@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import json
 import secrets
+import shutil
 import string
 from pathlib import Path
 from threading import RLock
@@ -13,6 +14,7 @@ from uuid import uuid4
 class RoomStore:
     def __init__(self, path: Path) -> None:
         self.path = path
+        self.data_dir = path.parent
         self._lock = RLock()
         self._state = self._load()
 
@@ -41,6 +43,9 @@ class RoomStore:
                 "characters": [],
             }
 
+            if password is not None and password != "":
+                room["password"] = password
+
             self._state["rooms"][room_id] = room
             self._add_system_message(room, f"{keeper_name} 创建了房间。")
             self._save()
@@ -49,6 +54,12 @@ class RoomStore:
     def join_room(self, invite_code: str, display_name: str, password: str | None = None, role: str = "player") -> tuple[dict, str]:
         with self._lock:
             room = self._find_by_invite(invite_code)
+            stored_password = room.get("password")
+            if stored_password is not None and stored_password != "" and password != stored_password:
+                raise PermissionError("Incorrect password")
+            max_members = 50
+            if len(room.get("members", [])) >= max_members:
+                raise PermissionError("Room is full (max 50 members)")
             member_id = uuid4().hex
             room["members"].append(
                 {
@@ -311,8 +322,11 @@ class RoomStore:
         if not self.path.exists():
             return {"rooms": {}}
 
-        with self.path.open("r", encoding="utf-8") as file:
-            return json.load(file)
+        try:
+            with self.path.open("r", encoding="utf-8") as file:
+                return json.load(file)
+        except json.JSONDecodeError:
+            return {"rooms": {}}
 
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -649,14 +663,16 @@ class RoomStore:
                         dodge_value = sk.get("value") or 25
                         break
                 defend_roll = roll_dice("1d100", target_value=dodge_value, bonus_penalty=0)
-                # Opposed: attack vs dodge
+                # Opposed: attack vs dodge (defender wins ties per CRB p108)
                 winner = opposed_check(attack_roll["total"], skill_value,
-                                      defend_roll["total"], dodge_value)
+                                      defend_roll["total"], dodge_value,
+                                      defender_wins_tie=True)
                 attacker_wins = winner.get("winner") == "actor"
                 if attacker_wins:
-                    # Apply damage
+                    # Apply damage (defender dodged, not fighting back)
                     damage = self._calc_damage(weapon_damage, current_actor["db"],
-                                              attack_roll.get("successLevel"))
+                                              attack_roll.get("successLevel"),
+                                              is_fighting_back=False)
                     new_hp = max(0, defender_actor["hp"] - damage)
                     defender_actor["hp"] = new_hp
                     defender_char.setdefault("status", {})["hp"] = new_hp
@@ -677,16 +693,18 @@ class RoomStore:
                 defender_skills = defender_char.get("skills", [])
                 fight_value = 25
                 for sk in defender_skills:
-                    if sk.get("name") in ("格斗(斗殴)", "格斗(斗殴)", "格斗", "斗殴"):
+                    if sk.get("name") in ("格斗(斗殴)", "格斗", "斗殴"):
                         fight_value = sk.get("value") or 25
                         break
                 defend_roll = roll_dice("1d100", target_value=fight_value, bonus_penalty=0)
                 winner = opposed_check(attack_roll["total"], skill_value,
-                                      defend_roll["total"], fight_value)
+                                      defend_roll["total"], fight_value,
+                                      defender_wins_tie=False)
                 attacker_wins = winner.get("winner") == "actor"
                 if attacker_wins:
                     damage = self._calc_damage(weapon_damage, current_actor["db"],
-                                              attack_roll.get("successLevel"))
+                                              attack_roll.get("successLevel"),
+                                              is_fighting_back=True)
                     new_hp = max(0, defender_actor["hp"] - damage)
                     defender_actor["hp"] = new_hp
                     defender_char.setdefault("status", {})["hp"] = new_hp
@@ -732,16 +750,24 @@ class RoomStore:
             self._save()
             return deepcopy(cs)
 
-    def _calc_damage(self, weapon_damage: str, db: str, success_level: str | None) -> int:
+    def _calc_damage(self, weapon_damage: str, db: str, success_level: str | None,
+                     is_impaling: bool = True, is_fighting_back: bool = False) -> int:
+        """COC 7e 伤害计算 (CRB p104-108).
+
+        - 极难/大成功：最大武器伤害 + 最大 DB（不掷骰）
+        - 穿刺武器且非反击时：额外 + 武器伤害掷骰（穿刺规则 CRB p104）
+        - 反击成功时：只取最大伤害，不加穿刺骰（CRB p108）
+        """
         from app.modules.dice.roller import roll_dice
         wd = roll_dice(weapon_damage)["total"]
         db_val = roll_dice(db)["total"] if db and db not in ("0", "-1", "-2") else (
             int(db) if db and db.lstrip('-').isdigit() else 0)
-        # Extreme success = max damage
-        if success_level == "extreme":
+        if success_level in ("extreme", "critical"):
             max_wd = self._max_damage(weapon_damage)
             max_db_val = self._max_damage(db) if db and db not in ("0", "-1", "-2") else 0
-            return max_wd + max_db_val + wd  # impale rule
+            if is_impaling and not is_fighting_back:
+                return max_wd + max_db_val + wd  # impale: max + weapon damage roll
+            return max_wd + max_db_val  # max damage only
         return max(0, wd + db_val)
 
     def _max_damage(self, expr: str) -> int:
@@ -925,19 +951,39 @@ class RoomStore:
                 has_online = any(m.get("online") for m in room.get("members", []))
                 if has_online:
                     continue
-                # Check when the room was created/last active
-                created = room.get("createdAt", "")
-                if not created:
+                # Use the latest activity timestamp: last message, last roll, last voice,
+                # or fall back to room creation time.
+                latest_ts = room.get("createdAt", "")
+                for msg in room.get("messages", []):
+                    ts = msg.get("createdAt", "")
+                    if ts and ts > latest_ts:
+                        latest_ts = ts
+                for roll in room.get("rolls", []):
+                    ts = roll.get("createdAt", "")
+                    if ts and ts > latest_ts:
+                        latest_ts = ts
+                for voice in room.get("voices", []):
+                    ts = voice.get("createdAt", "")
+                    if ts and ts > latest_ts:
+                        latest_ts = ts
+                if not latest_ts:
                     continue
                 try:
-                    created_dt = datetime.fromisoformat(created)
-                    idle_seconds = (now - created_dt).total_seconds()
+                    latest_dt = datetime.fromisoformat(latest_ts)
+                    idle_seconds = (now - latest_dt).total_seconds()
                 except (ValueError, TypeError):
                     continue
                 if idle_seconds > max_idle_seconds:
                     to_remove.append(room_id)
             for rid in to_remove:
                 del self._state["rooms"][rid]
+                # Clean up orphaned voice files
+                upload_dir = self.data_dir / "uploads" / rid
+                if upload_dir.exists():
+                    try:
+                        shutil.rmtree(upload_dir)
+                    except OSError:
+                        pass
             if to_remove:
                 self._save()
             return len(to_remove)
