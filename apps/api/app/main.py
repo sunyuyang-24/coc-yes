@@ -14,7 +14,11 @@ from app.core.limiter import limiter
 from app.modules.auth.router import router as auth_router
 from app.modules.bootstrap.router import router as bootstrap_router
 from app.modules.health.router import router as health_router
-from app.modules.rooms.router import router as rooms_router, room_socket, store
+from app.modules.rooms.router import router as rooms_router, room_socket
+from app.modules.rooms.router_combat import router as combat_router
+from app.modules.rooms.router_chase import router as chase_router
+from app.modules.rooms.router_coc import router as coc_router
+from app.modules.rooms.deps import store
 from app.modules.rules.router import router as rules_router
 
 
@@ -46,11 +50,12 @@ class RateLimitMiddleware:
 
 async def _cleanup_loop():
     while True:
-        await asyncio.sleep(15)
+        await asyncio.sleep(300)  # check every 5 minutes
         try:
-            removed = store.cleanup_empty_rooms(max_idle_seconds=300)
+            # Only removes abandoned "preparing" rooms idle for >1 hour
+            removed = store.cleanup_empty_rooms(max_idle_seconds=3600)
             if removed:
-                print(f"[cleanup] removed {removed} empty room(s)")
+                print(f"[cleanup] removed {removed} abandoned preparing room(s)")
         except Exception:
             pass
 
@@ -86,6 +91,9 @@ app.include_router(auth_router, prefix="/api", tags=["auth"])
 app.include_router(health_router, prefix="/api", tags=["health"])
 app.include_router(bootstrap_router, prefix="/api", tags=["bootstrap"])
 app.include_router(rooms_router, prefix="/api", tags=["rooms"])
+app.include_router(combat_router, prefix="/api", tags=["combat"])
+app.include_router(chase_router, prefix="/api", tags=["chase"])
+app.include_router(coc_router, prefix="/api", tags=["coc"])
 app.include_router(rules_router, prefix="/api", tags=["rules"])
 
 

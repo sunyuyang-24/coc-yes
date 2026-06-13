@@ -12,7 +12,7 @@ import { SettingsPanel, loadSettings } from "@/components/settings-panel";
 import { SanCheckPanel } from "@/components/san-check-panel";
 import { CombatPanel } from "@/components/combat-panel";
 import { ChasePanel } from "@/components/chase-panel";
-import { LoginPanel } from "@/components/login-panel";
+import { RoomSetup } from "@/components/room-setup";
 import { apiRequest, apiUrl, wsUrl } from "@/lib/api";
 import { clearAuth, getToken, getUser } from "@/lib/auth";
 
@@ -93,7 +93,7 @@ export function RoomConsole() {
   useEffect(() => { if (room?.roomTheme) document.documentElement.dataset.background = room.roomTheme; }, [room?.roomTheme]);
   useEffect(() => { const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return; try { const session = JSON.parse(raw) as { roomId: string; memberId: string };
-    apiRequest<RoomOnlyResponse>(`/api/rooms/${session.roomId}`).then(({ room: restoredRoom }) => {
+    apiRequest<RoomOnlyResponse>(`/api/rooms/${session.roomId}?member_id=${encodeURIComponent(session.memberId)}`).then(({ room: restoredRoom }) => {
       if (restoredRoom.status === "ended") { window.localStorage.removeItem(STORAGE_KEY); return; }
       setRoom(restoredRoom); setMemberId(session.memberId); setNotice(""); }).catch((err) => {
         if (err && typeof err === 'object' && 'status' in err && (err as any).status === 404) {
@@ -188,14 +188,14 @@ export function RoomConsole() {
     if (!room || !memberId) return; await apiRequest(`/api/rooms/${room.id}/characters/${characterId}`,
       { method: "PATCH", body: JSON.stringify({ editorId: memberId, basic, attributes, keeperNotes,
         locked_fields: lockedFields, status }) });
-    const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`); setRoom(detail.room); }
+    const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}?member_id=${encodeURIComponent(memberId!)}`); setRoom(detail.room); }
   async function uploadCharacter(event: FormEvent<HTMLFormElement>) { event.preventDefault();
     if (!room || !memberId || !characterFile) return; const body = new FormData();
     body.append("ownerId", memberId); body.append("file", characterFile);
     try {
       const response = await fetch(apiUrl(`/api/rooms/${room.id}/characters/upload`), { method: "POST", body });
       if (!response.ok) { const errText = await response.text(); alert(`上传失败: ${errText}`); return; }
-      const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`); setRoom(detail.room);
+      const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}?member_id=${encodeURIComponent(memberId!)}`); setRoom(detail.room);
       setCharacterFile(null);
     } catch (err) { alert(`上传角色卡出错: ${err instanceof Error ? err.message : "网络错误"}`); } }
   const [showKpLeaveConfirm, setShowKpLeaveConfirm] = useState(false);
@@ -228,7 +228,7 @@ export function RoomConsole() {
     try {
       const form = new FormData(); form.append("editorId", memberId);
       await fetch(apiUrl(`/api/rooms/${room.id}/messages/${deleteMsgId}/delete`), { method: "POST", body: form });
-      const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`); setRoom(detail.room);
+      const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}?member_id=${encodeURIComponent(memberId!)}`); setRoom(detail.room);
     } catch { /* WebSocket room_update will refresh */ }
     finally { setDeleting(false); setDeleteMsgId(null); }
   }
@@ -238,7 +238,7 @@ export function RoomConsole() {
     try {
       const form = new FormData(); form.append("editorId", memberId);
       await fetch(apiUrl(`/api/rooms/${room.id}/characters/${deleteNpcId}/delete`), { method: "POST", body: form });
-      const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`); setRoom(detail.room);
+      const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}?member_id=${encodeURIComponent(memberId!)}`); setRoom(detail.room);
       setSelectedCharId(null);
     } catch { /* WebSocket room_update will refresh */ }
     finally { setDeletingNpc(false); setDeleteNpcId(null); }
@@ -258,7 +258,7 @@ export function RoomConsole() {
       const res = await fetch(apiUrl(`/api/rooms/${room.id}/characters/npc/text`), { method: "POST", body: form });
       if (!res.ok) { const err = await res.json(); setNotice(`NPC 创建失败: ${err.detail || res.statusText}`); return; }
       setNpcText(""); setShowNpcPanel(false);
-      const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`); setRoom(detail.room);
+      const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}?member_id=${encodeURIComponent(memberId!)}`); setRoom(detail.room);
     } catch { /* WebSocket room_update will refresh */ }
     finally { setNpcCreating(false); }
   }
@@ -303,122 +303,31 @@ export function RoomConsole() {
   const isKeeper = currentMember?.role === "keeper";
 
 
-  // ---- RENDER: Login gate ----
-  if (!isLoggedIn) {
-    return <LoginPanel onAuth={() => setIsLoggedIn(true)} />;
-  }
-
-  // ---- RENDER: Setup screens (no room active) ----
-  if (!room) {
+  // ---- RENDER: Login gate + Setup screens ----
+  if (!isLoggedIn || !room) {
     return (
-      <section className="setup-screens">
-        {/* My Rooms */}
-        <div className="setup-card" style={{ maxWidth: "480px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <p className="panel__kicker">已登录</p>
-              <h2>{currentUser?.display_name || currentUser?.username || "玩家"}</h2>
-            </div>
-            <button className="button button--ghost button--sm" onClick={() => { clearAuth(); setIsLoggedIn(false); }} type="button">
-              退出
-            </button>
-          </div>
-          <div style={{ marginTop: "12px" }}>
-            <button className="button button--ghost button--sm" onClick={async () => {
-              setLoadingRooms(true);
-              try {
-                const data = await apiRequest<{rooms: typeof myRooms}>("/api/rooms/mine");
-                setMyRooms(data.rooms);
-              } catch { /* ignore */ }
-              setLoadingRooms(false);
-            }} type="button">
-              {loadingRooms ? "加载中..." : "我的房间"}
-            </button>
-          </div>
-          {myRooms.length > 0 && (
-            <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
-              {myRooms.map((r) => (
-                <div key={r.id} style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--border)",
-                  background: "var(--bg-hover)", fontSize: "13px",
-                }}>
-                  <div>
-                    <span style={{ color: "var(--text)", fontWeight: 500 }}>{r.name}</span>
-                    <span style={{ color: "var(--text-muted)", marginLeft: "8px" }}>
-                      {r.status === "active" ? "进行中" : r.status === "preparing" ? "准备中" : "已结束"}
-                    </span>
-                  </div>
-                  <button className="button button--ghost button--sm" onClick={async () => {
-                    try {
-                      const data = await apiRequest<RoomOnlyResponse>(`/api/rooms/${r.id}`);
-                      if (data.room.status !== "ended") {
-                        const joinData = await apiRequest<{room: RoomDetail; currentMemberId: string}>(
-                          `/api/rooms/join`, { method: "POST", body: JSON.stringify({
-                            invite_code: r.inviteCode,
-                            display_name: currentUser?.display_name || currentUser?.username || "",
-                            role: "player",
-                          })});
-                        enterRoom(joinData.room, joinData.currentMemberId);
-                      } else {
-                        setRoom(data.room);
-                        setMemberId("");
-                      }
-                    } catch { /* ignore */ }
-                  }} type="button">
-                    进入
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <form className="setup-card" onSubmit={createRoom}>
-          <p className="panel__kicker">✦ Keeper</p>
-          <h2>创建房间</h2>
-          <p className="setup-card__desc">作为守秘人主持一场克苏鲁的呼唤游戏</p>
-          <div className="setup-card__fields">
-            <label>房间名
-              <input type="text" value={roomName} onChange={(e) => setRoomName(e.target.value)}
-                placeholder="例如：暗黑边缘" autoFocus />
-            </label>
-            <label>KP 名称
-              <input type="text" value={keeperName} onChange={(e) => setKeeperName(e.target.value)} />
-            </label>
-            <label>密码 <small>（选填）</small>
-              <input type="password" value={roomPassword} onChange={(e) => setRoomPassword(e.target.value)} placeholder="不设密码" />
-            </label>
-          </div>
-          <div className="setup-card__actions">
-            <button className="button button--primary" type="submit">创建游戏房间</button>
-          </div>
-        </form>
-        <form className="setup-card" onSubmit={joinRoom}>
-          <p className="panel__kicker">◈ Investigator</p>
-          <h2>加入房间</h2>
-          <p className="setup-card__desc">使用邀请码加入已存在的游戏房间</p>
-          <div className="setup-card__fields">
-            <label>邀请码
-              <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                placeholder="例如 A1B2C3" />
-            </label>
-            <label>显示名
-              <input type="text" value={playerName} onChange={(e) => setPlayerName(e.target.value)} />
-            </label>
-            <label>密码 <small>（选填）</small>
-              <input type="password" value={joinPassword} onChange={(e) => setJoinPassword(e.target.value)} placeholder="不设密码" />
-            </label>
-            <label className="spectator-toggle">
-              <input type="checkbox" checked={joinAsSpectator} onChange={(e) => setJoinAsSpectator(e.target.checked)} />
-              以观察者身份加入（只看不说）
-            </label>
-          </div>
-          <div className="setup-card__actions">
-            <button className="button button--ghost" type="submit">加入游戏房间</button>
-          </div>
-        </form>
-      </section>
+      <RoomSetup
+        isLoggedIn={isLoggedIn}
+        setIsLoggedIn={setIsLoggedIn}
+        currentUser={currentUser}
+        myRooms={myRooms}
+        loadingRooms={loadingRooms}
+        setMyRooms={setMyRooms}
+        setLoadingRooms={setLoadingRooms}
+        roomName={roomName} setRoomName={setRoomName}
+        keeperName={keeperName} setKeeperName={setKeeperName}
+        roomPassword={roomPassword} setRoomPassword={setRoomPassword}
+        joinPassword={joinPassword} setJoinPassword={setJoinPassword}
+        joinAsSpectator={joinAsSpectator} setJoinAsSpectator={setJoinAsSpectator}
+        inviteCode={inviteCode} setInviteCode={setInviteCode}
+        playerName={playerName} setPlayerName={setPlayerName}
+        enterRoom={enterRoom}
+        setRoom={setRoom}
+        setMemberId={setMemberId}
+        setNotice={setNotice}
+        createRoom={createRoom}
+        joinRoom={joinRoom}
+      />
     );
   }
 

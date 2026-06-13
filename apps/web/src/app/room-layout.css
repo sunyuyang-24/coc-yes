@@ -347,8 +347,8 @@
 /* Setup Screens — dynamic rounded cards                                */
 /* ================================================================== */
 .setup-screens {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 40px;
-  max-width: 780px; margin: 60px auto 40px; padding: 0 24px;
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px;
+  max-width: 960px; margin: 60px auto 40px; padding: 0 24px;
   position: relative;
 }
 
