@@ -60,6 +60,25 @@ class RoomStore:
             max_members = 50
             if len(room.get("members", [])) >= max_members:
                 raise PermissionError("Room is full (max 50 members)")
+
+            # Reuse existing offline member with same name (player reconnected)
+            existing = next(
+                (m for m in room.get("members", [])
+                 if m["displayName"] == display_name and not m["online"]),
+                None,
+            )
+            if existing is not None:
+                existing["online"] = True
+                existing["role"] = role if role in ("player", "spectator") else "player"
+                # Clean up any duplicate offline members with the same name
+                room["members"] = [
+                    m for m in room["members"]
+                    if not (m["displayName"] == display_name and not m["online"] and m["id"] != existing["id"])
+                ]
+                self._add_system_message(room, f"{display_name} 重新连接了房间。")
+                self._save()
+                return deepcopy(room), existing["id"]
+
             member_id = uuid4().hex
             room["members"].append(
                 {
