@@ -10,8 +10,12 @@ from pathlib import Path
 from threading import RLock
 from uuid import uuid4
 
+from app.modules.rooms.store_combat import CombatMixin
+from app.modules.rooms.store_chase import ChaseMixin
+from app.modules.rooms.store_npc import NpcMixin
 
-class RoomStore:
+
+class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
     def __init__(self, path: Path) -> None:
         self.path = path
         self.data_dir = path.parent
@@ -122,6 +126,9 @@ class RoomStore:
         member = self._find_member(room, member_id)
         is_keeper = member["role"] == "keeper"
 
+        # 永远不暴露房间密码
+        room.pop("password", None)
+
         if not is_keeper:
             # 完全移除暗骰消息
             room["messages"] = [
@@ -207,296 +214,6 @@ class RoomStore:
             self._save()
 
             return deepcopy(roll_record)
-
-    def create_npc(self, room_id: str, keeper_id: str, name: str) -> dict:
-        label_map = {
-            "STR": "力量", "DEX": "敏捷", "POW": "意志",
-            "CON": "体质", "APP": "外貌", "EDU": "教育",
-            "SIZ": "体型", "INT": "智力", "LUCK": "幸运",
-        }
-        character = {
-            "basic": {"name": f"{name} (NPC)", "occupation": "NPC"},
-            "attributes": [
-                {"key": k, "label": v, "value": 50, "half": 25, "fifth": 10}
-                for k, v in label_map.items()
-            ],
-            "status": {"hp": 10, "san": 50, "mp": 10, "luck": 50, "mov": 7, "armor": 0},
-            "initialStatus": {"hp": 10, "san": 50, "mp": 10, "luck": 50, "mov": 7, "armor": 0},
-            "skills": [
-                {"name": "闪避", "value": 25, "half": 12, "fifth": 5},
-            ],
-            "weapons": [{"name": "拳头", "damage": "1d3", "skill": "拳头/摔跌"}],
-            "background": {}, "experiences": [], "spells": [],
-            "warnings": [], "sourceFileName": "npc",
-            "isNpc": True,
-        }
-        return self.add_character(room_id, keeper_id, character, replace_existing=False)
-
-    def create_npc_from_text(self, room_id: str, keeper_id: str, npc_text: str) -> dict:
-        """Parse free-form NPC text and create a character card."""
-        import re
-
-        label_map = {
-            "STR": "力量", "DEX": "敏捷", "POW": "意志",
-            "CON": "体质", "APP": "外貌", "EDU": "教育",
-            "SIZ": "体型", "INT": "智力", "LUCK": "幸运",
-        }
-
-        # Default values
-        attrs: dict[str, int] = {k: 50 for k in label_map}
-        name = "NPC"
-        occupation = "NPC"
-        skills: list[dict] = []
-        weapons: list[dict] = []
-        background_parts: list[str] = []
-        hp_override: int | None = None
-        san_override: int | None = None
-        mp_override: int | None = None
-        mov_override: int | None = None
-        armor_override: int = 0
-        db_override: str | None = None
-        build_override: int | None = None
-
-        text = npc_text.strip()
-
-        # ── Name extraction ──
-        # Check for explicit name prefixes
-        name_prefixes = ["名称:", "姓名:", "名字:", "name:", "npc名:", "npc名称:"]
-        for prefix in name_prefixes:
-            if text.lower().startswith(prefix.lower()):
-                rest = text[len(prefix):].lstrip()
-                # Name is everything up to the first newline or comma-period
-                m = re.match(r'([^\n，,。.]+)', rest)
-                if m:
-                    name = m.group(1).strip()
-                    text = rest[m.end():].strip()
-                break
-        else:
-            # If first line contains Chinese attribute keywords, it's not a name line
-            first_line = text.split("\n")[0].strip()
-            cn_attr_kw = ["力量", "体质", "体型", "敏捷", "智力", "外貌", "意志", "教育", "幸运", "理智", "生命"]
-            has_cn_attr = any(kw in first_line for kw in cn_attr_kw)
-            has_en_attr = bool(re.search(r'\b(STR|CON|DEX|APP|POW|SIZ|INT|EDU|LUCK)\s*\d+', first_line, re.IGNORECASE))
-            if not has_cn_attr and not has_en_attr:
-                # First line is name/description: "梅洛迪亚斯·杰弗逊 58岁，守墓人"
-                # Extract name (before age/occupation markers)
-                name_match = re.match(r'^(.+?)(?:\s+\d+岁|\s*[，,]\s*\S+)?$', first_line)
-                if name_match:
-                    name = name_match.group(1).strip()
-                    text = text[len(first_line):].strip()
-                    # Try to extract age and occupation from the same line
-                    age_m = re.search(r'(\d+)\s*岁', first_line)
-                    occ_m = re.search(r'[，,]\s*(.+?)$', first_line)
-                    if age_m:
-                        background_parts.append(f"年龄: {age_m.group(1)}")
-                    if occ_m:
-                        occupation = occ_m.group(1).strip()
-
-        # Section splitting
-        skill_section = ""
-        weapon_section = ""
-        bg_section = ""
-
-        # Try to split by section markers
-        section_markers = [
-            (r'技能[：:]', 'skills'),
-            (r'武器[：:]', 'weapons'),
-            (r'背景[：:]', 'background'),
-            (r'装备[：:]', 'weapons'),
-            (r'描述[：:]', 'background'),
-        ]
-
-        remaining = text
-        sections: list[tuple[str, str]] = []  # (type, content)
-        current_type = "attrs"
-        current_content: list[str] = []
-
-        for line in text.split("\n"):
-            line_stripped = line.strip()
-            if not line_stripped:
-                continue
-            matched = False
-            for pattern, stype in section_markers:
-                m = re.match(pattern, line_stripped, re.IGNORECASE)
-                if m:
-                    if current_content:
-                        sections.append((current_type, "\n".join(current_content)))
-                    current_type = stype
-                    current_content = [line_stripped[m.end():].strip()] if line_stripped[m.end():].strip() else []
-                    matched = True
-                    break
-            if not matched:
-                current_content.append(line_stripped)
-        if current_content:
-            sections.append((current_type, "\n".join(current_content)))
-
-        for stype, content in sections:
-            if stype == "attrs":
-                # Parse English attribute values: STR 70 CON 60 DEX 50 etc.
-                attr_pattern_en = re.compile(r'\b(STR|CON|DEX|APP|POW|SIZ|INT|EDU|LUCK)\s*[：:=\s]*\s*(\d{1,3})\b', re.IGNORECASE)
-                for m in attr_pattern_en.finditer(content):
-                    key = m.group(1).upper()
-                    val = int(m.group(2))
-                    if 1 <= val <= 999:
-                        attrs[key] = val
-
-                # Parse Chinese attribute values: 力量 45 体质 65 体型 60 etc.
-                cn_attr_map = {
-                    "力量": "STR", "体质": "CON", "体型": "SIZ", "敏捷": "DEX",
-                    "智力": "INT", "外貌": "APP", "意志": "POW", "教育": "EDU",
-                    "幸运": "LUCK", "灵感": "INT",
-                }
-                for cn_name, en_key in cn_attr_map.items():
-                    # Pattern: 力量 45 or 力量45 or 力量:45
-                    for m in re.finditer(re.escape(cn_name) + r'\s*[：:=\s]*\s*(\d{1,3})', content):
-                        val = int(m.group(1))
-                        if 1 <= val <= 999:
-                            attrs[en_key] = val
-
-                # Parse HP/SAN/MP/MOV/Armor overrides (English + Chinese)
-                for m in re.finditer(r'\b(?:HP|生命值?)\s*[：:=\s]*\s*(\d{1,4})\b', content, re.IGNORECASE):
-                    hp_override = int(m.group(1))
-                for m in re.finditer(r'\b(?:SAN|理智值?|理智)\s*[：:=\s]*\s*(\d{1,4})\b', content, re.IGNORECASE):
-                    san_override = int(m.group(1))
-                for m in re.finditer(r'\b(?:MP|魔法值?)\s*[：:=\s]*\s*(\d{1,4})\b', content, re.IGNORECASE):
-                    mp_override = int(m.group(1))
-                for m in re.finditer(r'\b(?:MOV|移动速度?|移动)\s*[：:=\s]*\s*(\d{1,2})\b', content, re.IGNORECASE):
-                    mov_override = int(m.group(1))
-                for m in re.finditer(r'(?:护甲|装甲|ARMOR?)\s*[：:=\s]*\s*(\d{1,2})\b', content, re.IGNORECASE):
-                    armor_override = int(m.group(1))
-                for m in re.finditer(r'\b(DB|伤害加值)\s*[：:=\s]*\s*([+-]?\d{1,2}[dD]\d{1,2}|[+-]?\d+)\b', content, re.IGNORECASE):
-                    db_override = m.group(2)
-                for m in re.finditer(r'\bBUILD\s*[：:=\s]*\s*(\d{1,2})\b', content, re.IGNORECASE):
-                    build_override = int(m.group(1))
-
-                # Parse age: 58岁 or 年龄: 58
-                age_m = re.search(r'(?:年龄|岁数)?\s*[：:=\s]*\s*(\d{1,3})\s*岁', content)
-                if age_m:
-                    background_parts.append(f"年龄: {age_m.group(1)}")
-
-                # Parse occupation
-                occ_m = re.search(r'(?:职业|OCCUPATION)\s*[：:=\s]*\s*(.+?)$', content, re.IGNORECASE | re.MULTILINE)
-                if occ_m:
-                    occupation = occ_m.group(1).strip()
-
-            elif stype == "skills":
-                # Parse skills: 技能名 数值, 技能名 数值
-                skill_parts = re.split(r'[,，;；\n]', content)
-                for part in skill_parts:
-                    part = part.strip()
-                    if not part:
-                        continue
-                    # Match: name number (number may contain parentheses like "格斗(斗殴) 60")
-                    sm = re.match(r'(.+?)\s+(\d{1,3})\s*$', part)
-                    if sm:
-                        sname = sm.group(1).strip()
-                        sval = int(sm.group(2))
-                        if 0 <= sval <= 999:
-                            skills.append({
-                                "name": sname,
-                                "value": sval,
-                                "half": sval // 2,
-                                "fifth": sval // 5,
-                            })
-
-            elif stype == "weapons":
-                # Parse weapons: 武器名 伤害表达式
-                wp_lines = re.split(r'[\n;；]', content)
-                for wp_line in wp_lines:
-                    wp_line = wp_line.strip()
-                    if not wp_line:
-                        continue
-                    # Match: name damage (e.g., "匕首 1d4+2" or "拳头 1d3")
-                    wm = re.match(r'(.+?)\s+((?:\d+[dD]\d+(?:[+-]\d+)?)|(?:\d+))\s*$', wp_line)
-                    if wm:
-                        wname = wm.group(1).strip()
-                        wdamage = wm.group(2).strip()
-                        # Guess skill from weapon name
-                        wskill = "格斗(斗殴)"
-                        wname_lower = wname.lower()
-                        if any(kw in wname_lower for kw in ["拳", "爪", "牙", "咬"]):
-                            wskill = "格斗(斗殴)"
-                        elif any(kw in wname_lower for kw in ["刀", "剑", "匕首", "矛", "枪", "棍", "斧", "锤"]):
-                            wskill = wname if wname else "格斗(斗殴)"
-                        elif any(kw in wname_lower for kw in ["弓", "弩", "箭"]):
-                            wskill = "射击"
-                        elif any(kw in wname_lower for kw in ["手枪", "步枪", "霰弹", "冲锋枪"]):
-                            wskill = "射击"
-                        weapons.append({
-                            "name": wname,
-                            "damage": wdamage,
-                            "skill": wskill if wskill else "格斗(斗殴)",
-                        })
-                    else:
-                        # Just a weapon name without damage
-                        weapons.append({
-                            "name": wp_line,
-                            "damage": "1d3",
-                            "skill": "格斗(斗殴)",
-                        })
-
-            elif stype == "background":
-                background_parts.append(content)
-
-        # Build background
-        background_dict: dict[str, str] = {}
-        if background_parts:
-            bg_text = "\n".join(background_parts)
-            # Simple key-value parsing
-            for line in bg_text.split("\n"):
-                if "：" in line or ":" in line:
-                    parts = re.split(r'[：:]', line, maxsplit=1)
-                    if len(parts) == 2:
-                        background_dict[parts[0].strip()] = parts[1].strip()
-                else:
-                    background_dict.setdefault("描述", "")
-                    background_dict["描述"] += line + "\n"
-            background_dict = {k: v.strip() for k, v in background_dict.items() if v.strip()}
-
-        if not skills:
-            skills.append({"name": "闪避", "value": attrs["DEX"] // 2, "half": attrs["DEX"] // 4, "fifth": attrs["DEX"] // 10})
-
-        if not weapons:
-            weapons.append({"name": "拳头", "damage": "1d3", "skill": "拳头/摔跌"})
-
-        # Calculate derived values
-        con, siz = attrs["CON"], attrs["SIZ"]
-        pow_val, dex = attrs["POW"], attrs["DEX"]
-        hp_val = hp_override if hp_override is not None else max(1, (con + siz) // 10)
-        san_val = san_override if san_override is not None else pow_val
-        mp_val = mp_override if mp_override is not None else max(1, pow_val // 5)
-        mov_val = mov_override if mov_override is not None else 7
-        if dex < siz and mov_override is None:
-            mov_val = 7
-        elif dex > siz and mov_override is None:
-            mov_val = 8
-
-        # Build character dict
-        attributes_list = [
-            {"key": k, "label": v, "value": attrs[k], "half": attrs[k] // 2, "fifth": attrs[k] // 5}
-            for k, v in label_map.items()
-        ]
-
-        character = {
-            "basic": {"name": f"{name} (NPC)", "occupation": occupation},
-            "attributes": attributes_list,
-            "status": {"hp": hp_val, "san": san_val, "mp": mp_val,
-                        "luck": attrs.get("LUCK", pow_val * 5),
-                        "mov": mov_val, "armor": armor_override},
-            "initialStatus": {"hp": hp_val, "san": san_val, "mp": mp_val,
-                               "luck": attrs.get("LUCK", pow_val * 5),
-                               "mov": mov_val, "armor": armor_override},
-            "skills": skills,
-            "weapons": weapons,
-            "background": background_dict,
-            "experiences": [],
-            "spells": [],
-            "warnings": [],
-            "sourceFileName": f"npc-{name}",
-            "isNpc": True,
-        }
-
-        return self.add_character(room_id, keeper_id, character, replace_existing=False)
 
     def add_character(self, room_id: str, owner_id: str, character: dict, replace_existing: bool = True) -> dict:
         with self._lock:
@@ -1139,20 +856,6 @@ class RoomStore:
             return int(expr), None
         result = roll_dice(expr)
         return result["total"], result
-
-    # ── Combat ──
-
-    def _compute_db(self, str_val: int, siz_val: int) -> tuple:
-        total = str_val + siz_val
-        if total <= 64: return ("-2", -2)
-        if total <= 84: return ("-1", -1)
-        if total <= 124: return ("0", 0)
-        if total <= 164: return ("+1D4", 1)
-        if total <= 204: return ("+1D6", 2)
-        if total <= 284: return ("+2D6", 3)
-        if total <= 364: return ("+3D6", 4)
-        return ("+4D6", 5)
-
     def start_combat(self, room_id: str, editor_id: str) -> dict:
         with self._lock:
             room = self._require_room(room_id)
@@ -1197,13 +900,6 @@ class RoomStore:
             self._add_system_message(room, f"{editor['displayName']} 开始了战斗轮次！Round 1")
             self._save()
             return deepcopy(combat_state)
-
-    def get_combat_state(self, room_id: str) -> dict | None:
-        with self._lock:
-            room = self._require_room(room_id)
-            cs = room.get("combatState")
-            return deepcopy(cs) if cs else None
-
     def act_combat(self, room_id: str, attacker_id: str, weapon_index: int,
                    defender_id: str, action_type: str, hidden: bool) -> dict:
         from app.modules.dice.roller import roll_dice, opposed_check
@@ -1409,17 +1105,6 @@ class RoomStore:
 
             self._save()
             return deepcopy(cs)
-
-    def _is_impaling_weapon(self, weapon: dict | None) -> bool:
-        """Detect if a weapon is impaling based on its name (COC 7e CRB p104)."""
-        if not weapon:
-            return False
-        name = (weapon.get("name") or "").lower()
-        impaling_keywords = ["剑", "矛", "刺", "匕首", "小刀", "刀", "枪", "箭", "弩",
-                             "sword", "spear", "knife", "dagger", "blade", "bayonet",
-                             "rapier", "lance", "pike", "javelin"]
-        return any(kw in name for kw in impaling_keywords)
-
     def _calc_damage(self, weapon_damage: str, db: str, success_level: str | None,
                      is_impaling: bool = False, is_fighting_back: bool = False) -> int:
         """COC 7e 伤害计算 (CRB p104-108).
@@ -1441,17 +1126,6 @@ class RoomStore:
                 return max_wd + max_db_val + wd  # impale: max + weapon damage roll
             return max_wd + max_db_val  # max damage only
         return max(0, wd + db_val)
-
-    def _max_damage(self, expr: str) -> int:
-        import re
-        m = re.match(r'(\d*)[dD](\d+)\s*([+-]\s*\d+)?', expr.strip())
-        if not m:
-            return 0
-        count = int(m.group(1)) if m.group(1) else 1
-        sides = int(m.group(2))
-        modifier = int(m.group(3).replace(' ', '')) if m.group(3) else 0
-        return count * sides + modifier
-
     def end_combat(self, room_id: str, editor_id: str) -> dict:
         with self._lock:
             room = self._require_room(room_id)
@@ -1463,116 +1137,11 @@ class RoomStore:
             self._add_system_message(room, f"{editor['displayName']} 结束了战斗轮次。")
             self._save()
             return deepcopy(room)
-
-    # ── Chase ──
-
-    def start_chase(self, room_id: str, editor_id: str) -> dict:
-        with self._lock:
-            room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can start chase")
-
-            participants = []
-            for member in room["members"]:
-                if member["role"] == "spectator":
-                    continue
-                char = next((c for c in room.get("characters", [])
-                           if c.get("ownerId") == member["id"] and c.get("active") is not False), None)
-                mov = (char.get("status") or {}).get("mov") or 7 if char else 7
-                participants.append({
-                    "memberId": member["id"],
-                    "characterId": char["id"] if char else "",
-                    "displayName": char.get("basic", {}).get("name") if char else member["displayName"],
-                    "mov": mov,
-                    "role": "fugitive" if member["role"] != "keeper" else "pursuer",
-                    "position": 2 if member["role"] != "keeper" else 0,
-                })
-
-            chase_state = {
-                "active": True,
-                "participants": participants,
-                "obstacles": [],
-                "createdAt": self._now(),
-            }
-            room["chaseState"] = chase_state
-            self._add_system_message(room, f"{editor['displayName']} 开始了追逐轮次！")
-            self._save()
-            return deepcopy(chase_state)
-
     def get_chase_state(self, room_id: str) -> dict | None:
         with self._lock:
             room = self._require_room(room_id)
             cs = room.get("chaseState")
             return deepcopy(cs) if cs else None
-
-    def act_chase(self, room_id: str, participant_id: str, action_type: str,
-                  weapon_index: int | None, hidden: bool) -> dict:
-        from app.modules.dice.roller import roll_dice
-        with self._lock:
-            room = self._require_room(room_id)
-            cs = room.get("chaseState")
-            if not cs or not cs.get("active"):
-                raise ValueError("No active chase")
-
-            participant = next((p for p in cs["participants"]
-                               if p["memberId"] == participant_id), None)
-            if not participant:
-                raise ValueError("Participant not found")
-
-            if action_type == "speed_check":
-                # CON roll to adjust MOV
-                member = self._find_member(room, participant_id)
-                char = next((c for c in room.get("characters", [])
-                           if c.get("ownerId") == participant_id), None)
-                con_value = 50
-                if char:
-                    for attr in char.get("attributes", []):
-                        if attr.get("key") == "CON":
-                            con_value = attr.get("value") or 50
-                            break
-                result = roll_dice("1d100", target_value=con_value, bonus_penalty=0)
-                sl = result.get("successLevel")
-                if sl in ("critical", "extreme", "hard", "regular"):
-                    if result.get("successLevel") == "extreme":
-                        participant["mov"] += 1
-                else:
-                    participant["mov"] = max(1, participant["mov"] - 1)
-
-                roll_record = {
-                    "expression": "1d100", "total": result["total"],
-                    "breakdown": result.get("breakdown", []),
-                    "targetValue": con_value, "bonusPenalty": 0,
-                    "successLevel": result.get("successLevel"),
-                    "successLabel": result.get("successLabel"),
-                    "isSuccess": sl in ("critical", "extreme", "hard", "regular"),
-                    "hidden": hidden,
-                    "label": f"🏃 {participant['displayName']} 速度检定 CON={con_value} MOV={participant['mov']}",
-                }
-                self.add_dice_roll(room_id, participant_id, roll_record)
-
-            elif action_type == "maneuver":
-                participant["position"] += participant.get("mov", 7)
-                self._add_system_message(room,
-                    f"🏃 {participant['displayName']} 移动到位置 {participant['position']}")
-
-            elif action_type == "conflict":
-                result = roll_dice("1d100")
-                sl = result.get("successLevel")
-                roll_record = {
-                    "expression": "1d100", "total": result["total"],
-                    "breakdown": result.get("breakdown", []),
-                    "targetValue": None, "bonusPenalty": 0,
-                    "successLevel": sl, "successLabel": None,
-                    "isSuccess": sl in ("critical", "extreme", "hard", "regular") if sl else None,
-                    "hidden": hidden,
-                    "label": f"💥 {participant['displayName']} 追逐冲突检定",
-                }
-                self.add_dice_roll(room_id, participant_id, roll_record)
-
-            self._save()
-            return deepcopy(cs)
-
     def end_chase(self, room_id: str, editor_id: str) -> dict:
         with self._lock:
             room = self._require_room(room_id)
@@ -1652,30 +1221,36 @@ class RoomStore:
             return deepcopy(room)
 
     def cleanup_empty_rooms(self, max_idle_seconds: int = 30) -> int:
-        """Remove rooms that have had zero online members for more than max_idle_seconds.
-        Returns the number of rooms removed."""
+        """Remove only truly abandoned 'preparing' rooms with no meaningful content.
+
+        Active and ended rooms are never auto-deleted — their data is persistent.
+        Only 'preparing' rooms that have been idle with no online members and
+        contain at most 1 system message (the creation notice) are cleaned up.
+        """
         with self._lock:
             now = datetime.now(timezone.utc)
             to_remove = []
             for room_id, room in self._state.get("rooms", {}).items():
+                # Never clean up active or ended rooms
+                status = room.get("status", "preparing")
+                if status != "preparing":
+                    continue
+
                 has_online = any(m.get("online") for m in room.get("members", []))
                 if has_online:
                     continue
-                # Use the latest activity timestamp: last message, last roll, last voice,
-                # or fall back to room creation time.
+
+                # Only clean up rooms with no real content (≤1 system message)
+                messages = room.get("messages", [])
+                if len(messages) > 1:
+                    continue
+                has_characters = len(room.get("characters", [])) > 0
+                has_rolls = len(room.get("rolls", [])) > 0
+                if has_characters or has_rolls:
+                    continue
+
+                # Check idle time based on creation time
                 latest_ts = room.get("createdAt", "")
-                for msg in room.get("messages", []):
-                    ts = msg.get("createdAt", "")
-                    if ts and ts > latest_ts:
-                        latest_ts = ts
-                for roll in room.get("rolls", []):
-                    ts = roll.get("createdAt", "")
-                    if ts and ts > latest_ts:
-                        latest_ts = ts
-                for voice in room.get("voices", []):
-                    ts = voice.get("createdAt", "")
-                    if ts and ts > latest_ts:
-                        latest_ts = ts
                 if not latest_ts:
                     continue
                 try:
@@ -1685,9 +1260,9 @@ class RoomStore:
                     continue
                 if idle_seconds > max_idle_seconds:
                     to_remove.append(room_id)
+
             for rid in to_remove:
                 del self._state["rooms"][rid]
-                # Clean up orphaned voice files
                 upload_dir = self.data_dir / "uploads" / rid
                 if upload_dir.exists():
                     try:
@@ -1696,7 +1271,6 @@ class RoomStore:
                         pass
             if to_remove:
                 self._save()
-                # Also clean up SQLite rows for removed rooms
                 db = self._get_db()
                 if db is not None:
                     for rid in to_remove:

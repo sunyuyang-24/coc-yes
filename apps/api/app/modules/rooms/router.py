@@ -13,17 +13,14 @@ from app.modules.dice.roller import (
     insanity_check, weapon_malfunction_check,
 )
 from app.modules.dice.schemas import RollDiceRequest
-from app.modules.rooms.connection_manager import RoomConnectionManager
 from app.modules.rooms.schemas import (
     CreateRoomRequest, JoinRoomRequest, SendMessageRequest,
     CheckRequest, SanCheckRequest, CombatActionRequest,
     ChaseActionRequest, UpdateIntroRequest,
 )
-from app.modules.rooms.store import RoomStore
+from app.modules.rooms.deps import store, manager
 
 router = APIRouter()
-store = RoomStore(settings.data_dir / "rooms.json")
-manager = RoomConnectionManager()
 
 
 @router.get("/rooms/mine")
@@ -53,6 +50,7 @@ async def bind_member(room_id: str, request: Request) -> dict:
 @router.post("/rooms")
 async def create_room(payload: CreateRoomRequest) -> dict:
     room, member_id = store.create_room(payload.name, payload.keeper_name, payload.password)
+    room.pop("password", None)
     return {
         "room": room,
         "currentMemberId": member_id,
@@ -70,6 +68,7 @@ async def join_room(payload: JoinRoomRequest) -> dict:
 
     await manager.broadcast(room["id"], {"type": "room_update", "room": room})
 
+    room.pop("password", None)
     return {
         "room": room,
         "currentMemberId": member_id,
@@ -77,9 +76,15 @@ async def join_room(payload: JoinRoomRequest) -> dict:
 
 
 @router.get("/rooms/{room_id}")
-async def get_room(room_id: str) -> dict:
+async def get_room(room_id: str, member_id: str = "") -> dict:
     try:
-        return {"room": store.get_room(room_id)}
+        if member_id:
+            room = store.get_room_sanitized(room_id, member_id)
+        else:
+            room = store.get_room(room_id)
+        # Never expose room password in API responses
+        room.pop("password", None)
+        return {"room": room}
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Room not found") from error
 
@@ -474,297 +479,6 @@ async def save_summary_route(room_id: str, editor_id: str = Form(..., alias="edi
     return {"summary": summary}
 
 
-# ---------- COC 7e Advanced Rules ----------
-
-@router.post("/rooms/{room_id}/coc/opposed")
-async def opposed_roll(room_id: str, expression: str = Form("1d100"), target: str = Form("50"), opponentExpression: str = Form("1d100"), opponentTarget: str = Form("50"), actorTotal: str = Form(""), opponentTotal: str = Form(""), defenderWinsTie: str = Form("false")) -> dict:
-    from app.modules.dice.roller import roll_dice as rd
-    try:
-        target_int = int(target)
-        opp_target_int = int(opponentTarget)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid numeric value for target")
-
-    # Accept pre-rolled totals; re-roll only if not provided
-    if actorTotal and opponentTotal:
-        try:
-            actor = {"total": int(actorTotal), "targetValue": target_int, "breakdown": []}
-            opponent = {"total": int(opponentTotal), "targetValue": opp_target_int, "breakdown": []}
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid numeric value for pre-rolled total")
-    else:
-        actor = rd(expression, target_value=target_int)
-        opponent = rd(opponentExpression, target_value=opp_target_int)
-
-    dw_tie = defenderWinsTie.lower() == "true"
-    result = opposed_check(actor["total"], target_int, opponent["total"], opp_target_int, defender_wins_tie=dw_tie)
-    return {"actor": actor, "opponent": opponent, "result": result}
-
-@router.post("/rooms/{room_id}/coc/heal")
-async def heal_check(room_id: str, hpCurrent: str = Form("0"), hpMax: str = Form("10"), healType: str = Form("first_aid")) -> dict:
-    try:
-        chp, mhp = int(hpCurrent), int(hpMax)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid numeric value for HP")
-    if healType == "medicine":
-        return medicine_check(chp, mhp)
-    return first_aid_check(chp, mhp)
-
-@router.post("/rooms/{room_id}/coc/firstaid")
-async def firstaid_alias(room_id: str, hpCurrent: str = Form("0"), hpMax: str = Form("10")) -> dict:
-    """Alias for /coc/heal with first_aid type."""
-    try:
-        return first_aid_check(int(hpCurrent), int(hpMax))
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid numeric value for HP")
-
-@router.post("/rooms/{room_id}/coc/majorwound")
-async def majorwound_alias(room_id: str, damage: str = Form("0"), hpMax: str = Form("10")) -> dict:
-    """Alias for /coc/wound."""
-    try:
-        return major_wound_check(int(damage), int(hpMax))
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid numeric value for damage or HP")
-
-@router.post("/rooms/{room_id}/coc/wound")
-async def wound_check(room_id: str, damage: str = Form("0"), hpMax: str = Form("10")) -> dict:
-    try:
-        damage_int = int(damage)
-        hp_max_int = int(hpMax)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid numeric value for damage or HP")
-    return major_wound_check(damage_int, hp_max_int)
-
-@router.post("/rooms/{room_id}/coc/insanity")
-async def insanity_roll(room_id: str, sanLoss: str = Form("0"), currentSAN: str = Form("50"), maxSAN: str = Form("50")) -> dict:
-    try:
-        san_loss_int = int(sanLoss)
-        cur_san_int = int(currentSAN)
-        max_san_int = int(maxSAN)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid numeric value for SAN")
-    return insanity_check(san_loss_int, cur_san_int, max_san_int)
-
-@router.post("/rooms/{room_id}/coc/malfunction")
-async def malf_check(room_id: str, total: str = Form("0"), malfValue: str = Form("96")) -> dict:
-    try:
-        return weapon_malfunction_check(int(total), int(malfValue))
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid numeric value for malfunction check")
-
-@router.post("/rooms/{room_id}/coc/pushing")
-async def pushing_roll(room_id: str, total: str = Form("0"), target: str = Form("50"), isPushed: str = Form("false")) -> dict:
-    try:
-        return pushing_check(int(total), int(target), isPushed.lower() == "true")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid numeric value for pushing check")
-
-# ---------- Structured Skill/Attribute Check ----------
-
-@router.post("/rooms/{room_id}/rolls/check")
-async def structured_check(room_id: str, payload: CheckRequest) -> dict:
-    try:
-        room = store._require_room(room_id)
-        character = store._find_character(room, payload.character_id)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail="Room or character not found") from error
-
-    # Find skill or attribute value
-    target_value = 50
-    label = ""
-    # Bilingual skill name mapping (English → Chinese)
-    _SKILL_ALIASES: dict[str, str] = {
-        "dodge": "闪避", "library use": "图书馆使用", "spot hidden": "侦查",
-        "listen": "聆听", "psychology": "心理学", "stealth": "潜行",
-        "first aid": "急救", "medicine": "医学", " occult": "神秘学",
-        "history": "历史", "archaeology": "考古学", "law": "法律",
-        "fast talk": "话术", "persuade": "说服", "intimidate": "恐吓",
-        "charm": "魅惑", "climb": "攀爬", "swim": "游泳", "jump": "跳跃",
-        "drive auto": "汽车驾驶", "pilot": "驾驶", "ride": "骑术",
-        "fighting": "格斗", "brawl": "格斗(斗殴)", "firearms": "射击",
-        "handgun": "射击(手枪)", "rifle": "射击(步枪)", "shotgun": "射击(霰弹枪)",
-    }
-    if payload.skill_name:
-        lookup = payload.skill_name.strip()
-        for sk in character.get("skills", []):
-            sk_name = (sk.get("name") or "").strip()
-            # Try exact match first (both Chinese and English), then alias match
-            if sk_name == lookup or sk_name.lower() == lookup.lower():
-                val = sk.get("value") or 50
-                if payload.difficulty == "hard":
-                    target_value = val // 2
-                elif payload.difficulty == "extreme":
-                    target_value = val // 5
-                else:
-                    target_value = val
-                label = f"{character.get('basic', {}).get('name', '??')} | {sk_name}"
-                break
-            if _SKILL_ALIASES.get(lookup.lower()) == sk_name:
-                val = sk.get("value") or 50
-                if payload.difficulty == "hard":
-                    target_value = val // 2
-                elif payload.difficulty == "extreme":
-                    target_value = val // 5
-                else:
-                    target_value = val
-                label = f"{character.get('basic', {}).get('name', '??')} | {sk_name}"
-                break
-    elif payload.attribute_key:
-        for attr in character.get("attributes", []):
-            if attr.get("key") == payload.attribute_key:
-                val = attr.get("value") or 50
-                if payload.difficulty == "hard":
-                    target_value = val // 2
-                elif payload.difficulty == "extreme":
-                    target_value = val // 5
-                else:
-                    target_value = val
-                label = f"{character.get('basic', {}).get('name', '??')} | {attr.get('label', payload.attribute_key)}"
-                break
-
-    roll = roll_dice("1d100", target_value=target_value, label=label, hidden=payload.hidden)
-    roll_record = store.add_dice_roll(room_id, character.get("ownerId", ""), roll)
-    room = store.get_room(room_id)
-    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
-    return {"roll": roll_record}
-
-
-@router.post("/rooms/{room_id}/rolls/san-check")
-async def san_check(room_id: str, payload: SanCheckRequest) -> dict:
-    try:
-        room = store._require_room(room_id)
-        character = store._find_character(room, payload.character_id)
-        roller_id = character.get("ownerId", "")
-        if not roller_id:
-            raise HTTPException(status_code=400, detail="Character has no owner")
-        result = store.san_check_roll(
-            room_id, roller_id, payload.character_id,
-            payload.success_loss, payload.failure_loss, payload.hidden,
-        )
-        room = store.get_room(room_id)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-
-    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
-    return {"result": result}
-
-
-# ---------- Combat ----------
-
-@router.post("/rooms/{room_id}/combat/start")
-async def start_combat(room_id: str, editor_id: str = Form(..., alias="editorId")) -> dict:
-    try:
-        combat_state = store.start_combat(room_id, editor_id)
-        room = store.get_room(room_id)
-    except PermissionError as error:
-        raise HTTPException(status_code=403, detail=str(error)) from error
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail="Room or member not found") from error
-
-    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
-    return {"combatState": combat_state}
-
-
-@router.get("/rooms/{room_id}/combat/state")
-async def get_combat_state(room_id: str) -> dict:
-    try:
-        cs = store.get_combat_state(room_id)
-        return {"combatState": cs}
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Room not found")
-
-
-@router.post("/rooms/{room_id}/combat/action")
-async def combat_action(room_id: str, payload: CombatActionRequest) -> dict:
-    try:
-        cs = store.act_combat(
-            room_id, payload.attacker_id, payload.weapon_index,
-            payload.defender_id, payload.action_type, payload.hidden,
-        )
-        room = store.get_room(room_id)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-
-    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
-    return {"combatState": cs}
-
-
-@router.post("/rooms/{room_id}/combat/act")
-async def combat_act_alias(room_id: str, payload: CombatActionRequest) -> dict:
-    """Alias for /combat/action."""
-    return await combat_action(room_id, payload)
-
-
-@router.post("/rooms/{room_id}/combat/end")
-async def end_combat(room_id: str, editor_id: str = Form(..., alias="editorId")) -> dict:
-    try:
-        room = store.end_combat(room_id, editor_id)
-    except PermissionError as error:
-        raise HTTPException(status_code=403, detail=str(error)) from error
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail="Room or member not found") from error
-
-    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
-    return {"room": room}
-
-
-# ---------- Chase ----------
-
-@router.post("/rooms/{room_id}/chase/start")
-async def start_chase(room_id: str, editor_id: str = Form(..., alias="editorId")) -> dict:
-    try:
-        chase_state = store.start_chase(room_id, editor_id)
-        room = store.get_room(room_id)
-    except PermissionError as error:
-        raise HTTPException(status_code=403, detail=str(error)) from error
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail="Room or member not found") from error
-
-    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
-    return {"chaseState": chase_state}
-
-
-@router.get("/rooms/{room_id}/chase/state")
-async def get_chase_state(room_id: str) -> dict:
-    try:
-        cs = store.get_chase_state(room_id)
-        return {"chaseState": cs}
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Room not found")
-
-
-@router.post("/rooms/{room_id}/chase/action")
-async def chase_action(room_id: str, payload: ChaseActionRequest) -> dict:
-    try:
-        cs = store.act_chase(
-            room_id, payload.participant_id, payload.action_type,
-            payload.weapon_index, payload.hidden,
-        )
-        room = store.get_room(room_id)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-
-    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
-    return {"chaseState": cs}
-
-
-@router.post("/rooms/{room_id}/chase/end")
-async def end_chase(room_id: str, editor_id: str = Form(..., alias="editorId")) -> dict:
-    try:
-        room = store.end_chase(room_id, editor_id)
-    except PermissionError as error:
-        raise HTTPException(status_code=403, detail=str(error)) from error
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail="Room or member not found") from error
-
-    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
-    return {"room": room}
-
-
 # ---------- Module Intro ----------
 
 @router.patch("/rooms/{room_id}/intro")
@@ -811,16 +525,23 @@ async def room_socket(websocket: WebSocket, room_id: str, member_id: str) -> Non
             msg_type = payload.get("type", "")
 
             # WebRTC signaling relay
-            if msg_type in ("webrtc_offer", "webrtc_answer", "webrtc_ice", "webrtc_mute", "webrtc_unmute", "webrtc_voice_join", "webrtc_voice_leave"):
+            if msg_type in ("webrtc_offer", "webrtc_answer", "webrtc_ice", "webrtc_mute", "webrtc_unmute", "webrtc_voice_join", "webrtc_voice_leave", "webrtc_force_mute", "webrtc_kick"):
+                # KP-only commands: force_mute and kick require keeper role
+                if msg_type in ("webrtc_force_mute", "webrtc_kick"):
+                    sender = next((m for m in room.get("members", []) if m["id"] == member_id), None)
+                    if not sender or sender["role"] != "keeper":
+                        continue  # silently drop unauthorized commands
+
                 target = payload.get("target")
                 if target:
-                    # Point-to-point signaling
+                    # Point-to-point signaling (including force_mute / kick)
                     await manager.send_to(room_id, target, {
                         "type": msg_type,
                         "from": member_id,
                         "sdp": payload.get("sdp"),
                         "candidate": payload.get("candidate"),
                         "label": payload.get("label"),
+                        "muted": payload.get("muted"),
                     })
                 else:
                     # Broadcast voice status to room
