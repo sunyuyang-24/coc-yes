@@ -993,17 +993,17 @@ export function RoomConsole() {
                           </div>
                         </div>
                       )}
-                      {char.status.mp != null && (
+                      {char.status.luck != null && (
                         <div className="player-mini-card__stat">
-                          <span className="player-mini-card__stat-label">MP</span>
-                          <span className="player-mini-card__stat-val" style={{ color: "#4FC3F7" }}>
-                            {char.initialStatus?.mp != null ? `${char.initialStatus.mp}/` : ""}{char.status.mp}
+                          <span className="player-mini-card__stat-label">幸运</span>
+                          <span className="player-mini-card__stat-val" style={{ color: "#FFD54F" }}>
+                            {char.initialStatus?.luck != null ? `${char.initialStatus.luck}/` : ""}{char.status.luck}
                           </span>
                           <div className="player-mini-card__stat-bar">
                             <div className="player-mini-card__stat-fill" style={{
-                              width: char.initialStatus?.mp && typeof char.status.mp === "number" ?
-                                `${Math.min((char.status.mp / (char.initialStatus.mp || 1)) * 100, 100)}%` : "60%",
-                              background: "#4FC3F7" }} />
+                              width: char.initialStatus?.luck && typeof char.status.luck === "number" ?
+                                `${Math.min((char.status.luck / (char.initialStatus.luck || 1)) * 100, 100)}%` : "60%",
+                              background: "#FFD54F" }} />
                           </div>
                         </div>
                       )}

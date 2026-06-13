@@ -193,8 +193,8 @@ class RoomStore:
                 {"key": k, "label": v, "value": 50, "half": 25, "fifth": 10}
                 for k, v in label_map.items()
             ],
-            "status": {"hp": 10, "san": 50, "mp": 10, "mov": 7, "armor": 0},
-            "initialStatus": {"hp": 10, "san": 50, "mp": 10, "mov": 7, "armor": 0},
+            "status": {"hp": 10, "san": 50, "mp": 10, "luck": 50, "mov": 7, "armor": 0},
+            "initialStatus": {"hp": 10, "san": 50, "mp": 10, "luck": 50, "mov": 7, "armor": 0},
             "skills": [
                 {"name": "闪避", "value": 25, "half": 12, "fifth": 5},
             ],
@@ -453,8 +453,12 @@ class RoomStore:
         character = {
             "basic": {"name": f"{name} (NPC)", "occupation": occupation},
             "attributes": attributes_list,
-            "status": {"hp": hp_val, "san": san_val, "mp": mp_val, "mov": mov_val, "armor": armor_override},
-            "initialStatus": {"hp": hp_val, "san": san_val, "mp": mp_val, "mov": mov_val, "armor": armor_override},
+            "status": {"hp": hp_val, "san": san_val, "mp": mp_val,
+                        "luck": attrs.get("LUCK", pow_val * 5),
+                        "mov": mov_val, "armor": armor_override},
+            "initialStatus": {"hp": hp_val, "san": san_val, "mp": mp_val,
+                               "luck": attrs.get("LUCK", pow_val * 5),
+                               "mov": mov_val, "armor": armor_override},
             "skills": skills,
             "weapons": weapons,
             "background": background_dict,

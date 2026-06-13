@@ -87,6 +87,12 @@ def parse_character_card(content: bytes, filename: str) -> dict:
     # Capture initial status as snapshot for current/max comparison
     initial_status = {k: v for k, v in status.items() if v is not None}
 
+    # Add Luck from attributes to status (COC 7e: Luck is spendable, tracked like HP/SAN)
+    luck_val = next((a["value"] for a in attributes if a["key"] == "LUCK"), None)
+    if luck_val is not None:
+        status["luck"] = luck_val
+        initial_status["luck"] = luck_val
+
     return {
         "sourceFileName": filename,
         "basic": _parse_basic(cells),
