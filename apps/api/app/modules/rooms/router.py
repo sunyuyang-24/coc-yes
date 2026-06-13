@@ -1,5 +1,5 @@
 import asyncio
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from uuid import uuid4
 
 from app.core.config import settings
@@ -24,6 +24,30 @@ from app.modules.rooms.store import RoomStore
 router = APIRouter()
 store = RoomStore(settings.data_dir / "rooms.json")
 manager = RoomConnectionManager()
+
+
+@router.get("/rooms/mine")
+async def my_rooms(request: Request) -> dict:
+    user_id = getattr(request.state, "user_id", None)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return {"rooms": store.get_rooms_by_user(user_id)}
+
+
+@router.post("/rooms/{room_id}/bind")
+async def bind_member(room_id: str, request: Request) -> dict:
+    user_id = getattr(request.state, "user_id", None)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    body = await request.json()
+    member_id = body.get("memberId", "")
+    if not member_id:
+        raise HTTPException(status_code=400, detail="memberId is required")
+    try:
+        room = store.bind_member_to_user(room_id, member_id, user_id)
+        return {"room": room}
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.post("/rooms")

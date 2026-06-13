@@ -241,6 +241,18 @@ export const CORE_MODULES: CoreModule[] = [
   }
 ];
 
+export type UserInfo = {
+  id: string;
+  username: string;
+  display_name: string;
+  created_at: string;
+};
+
+export type AuthResponse = {
+  user: UserInfo;
+  token: string;
+};
+
 export const BUILD_PHASES: BuildPhase[] = [
   {
     key: "foundation",

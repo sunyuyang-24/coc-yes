@@ -12,7 +12,9 @@ import { SettingsPanel, loadSettings } from "@/components/settings-panel";
 import { SanCheckPanel } from "@/components/san-check-panel";
 import { CombatPanel } from "@/components/combat-panel";
 import { ChasePanel } from "@/components/chase-panel";
+import { LoginPanel } from "@/components/login-panel";
 import { apiRequest, apiUrl, wsUrl } from "@/lib/api";
+import { clearAuth, getToken, getUser } from "@/lib/auth";
 
 type RoomResponse = { room: RoomDetail; currentMemberId: string };
 type RoomOnlyResponse = { room: RoomDetail };
@@ -43,8 +45,12 @@ function findMemberChar(memberId: string, chars: CharacterCard[] | undefined): C
 }
 
 export function RoomConsole() {
+  const [isLoggedIn, setIsLoggedIn] = useState(() => getToken() != null);
+  const currentUser = useState(() => getUser())[0];
   const [room, setRoom] = useState<RoomDetail | null>(null);
   const [memberId, setMemberId] = useState<string | null>(null);
+  const [myRooms, setMyRooms] = useState<Array<{id:string;name:string;status:string;createdAt:string;inviteCode:string}>>([]);
+  const [loadingRooms, setLoadingRooms] = useState(false);
   const [roomName, setRoomName] = useState(""); const [keeperName, setKeeperName] = useState("KP");
   const [roomPassword, setRoomPassword] = useState(""); const [joinPassword, setJoinPassword] = useState("");
   const [joinAsSpectator, setJoinAsSpectator] = useState(false);
@@ -257,7 +263,15 @@ export function RoomConsole() {
     finally { setNpcCreating(false); }
   }
   function enterRoom(nextRoom: RoomDetail, nextMemberId: string) { setRoom(nextRoom); setMemberId(nextMemberId);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ roomId: nextRoom.id, memberId: nextMemberId })); }
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ roomId: nextRoom.id, memberId: nextMemberId }));
+    // Bind member to user account
+    if (getToken()) {
+      apiRequest(`/api/rooms/${nextRoom.id}/bind`, {
+        method: "POST",
+        body: JSON.stringify({ memberId: nextMemberId }),
+      }).catch(() => { /* ignore - guest mode or already bound */ });
+    }
+  }
   async function saveModuleIntro() {
     if (!room || !memberId) return;
     await apiRequest(`/api/rooms/${room.id}/intro`, { method: "PATCH",
@@ -289,10 +303,77 @@ export function RoomConsole() {
   const isKeeper = currentMember?.role === "keeper";
 
 
+  // ---- RENDER: Login gate ----
+  if (!isLoggedIn) {
+    return <LoginPanel onAuth={() => setIsLoggedIn(true)} />;
+  }
+
   // ---- RENDER: Setup screens (no room active) ----
   if (!room) {
     return (
       <section className="setup-screens">
+        {/* My Rooms */}
+        <div className="setup-card" style={{ maxWidth: "480px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <p className="panel__kicker">已登录</p>
+              <h2>{currentUser?.display_name || currentUser?.username || "玩家"}</h2>
+            </div>
+            <button className="button button--ghost button--sm" onClick={() => { clearAuth(); setIsLoggedIn(false); }} type="button">
+              退出
+            </button>
+          </div>
+          <div style={{ marginTop: "12px" }}>
+            <button className="button button--ghost button--sm" onClick={async () => {
+              setLoadingRooms(true);
+              try {
+                const data = await apiRequest<{rooms: typeof myRooms}>("/api/rooms/mine");
+                setMyRooms(data.rooms);
+              } catch { /* ignore */ }
+              setLoadingRooms(false);
+            }} type="button">
+              {loadingRooms ? "加载中..." : "我的房间"}
+            </button>
+          </div>
+          {myRooms.length > 0 && (
+            <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+              {myRooms.map((r) => (
+                <div key={r.id} style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--border)",
+                  background: "var(--bg-hover)", fontSize: "13px",
+                }}>
+                  <div>
+                    <span style={{ color: "var(--text)", fontWeight: 500 }}>{r.name}</span>
+                    <span style={{ color: "var(--text-muted)", marginLeft: "8px" }}>
+                      {r.status === "active" ? "进行中" : r.status === "preparing" ? "准备中" : "已结束"}
+                    </span>
+                  </div>
+                  <button className="button button--ghost button--sm" onClick={async () => {
+                    try {
+                      const data = await apiRequest<RoomOnlyResponse>(`/api/rooms/${r.id}`);
+                      if (data.room.status !== "ended") {
+                        const joinData = await apiRequest<{room: RoomDetail; currentMemberId: string}>(
+                          `/api/rooms/join`, { method: "POST", body: JSON.stringify({
+                            invite_code: r.inviteCode,
+                            display_name: currentUser?.display_name || currentUser?.username || "",
+                            role: "player",
+                          })});
+                        enterRoom(joinData.room, joinData.currentMemberId);
+                      } else {
+                        setRoom(data.room);
+                        setMemberId("");
+                      }
+                    } catch { /* ignore */ }
+                  }} type="button">
+                    进入
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <form className="setup-card" onSubmit={createRoom}>
           <p className="panel__kicker">✦ Keeper</p>
           <h2>创建房间</h2>
@@ -403,6 +484,11 @@ export function RoomConsole() {
               <option value="sepia">羊皮纸</option>
             </select>
           )}
+          <button className="button button--ghost button--sm"
+            onClick={() => { clearAuth(); setRoom(null); setMemberId(null); setIsLoggedIn(false); }}
+            type="button">
+            退出登录
+          </button>
           <button className="button button--ghost button--sm"
             onClick={() => isKeeper ? setShowKpLeaveConfirm(true) : leaveLocalRoom()}
             disabled={leaving} type="button">
