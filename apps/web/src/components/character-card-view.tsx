@@ -217,21 +217,25 @@ export function CharacterCardView({
               </div>
             );
           })}
-          {/* Luck */}
-          {character.status.luck != null && (
-            <div key="luck" className="status-chip">
-              <span className="status-chip__label">幸运</span>
-              <span className="status-chip__value">
-                {character.initialStatus?.luck != null ? character.initialStatus.luck + " / " : ""}{character.status.luck}
-              </span>
-              <div className="status-chip__bar">
-                <div className="status-chip__bar-fill" style={{
-                  width: character.initialStatus?.luck && typeof character.status.luck === "number" ?
-                    Math.min((character.status.luck / (character.initialStatus.luck || 1)) * 100, 100) + "%" : "60%",
-                  background: "#FFD54F" }} />
+          {/* Luck — fallback to attributes for pre-existing characters */}
+          {(() => {
+            const luckVal = character.status.luck ?? character.attributes?.find((a) => a.key === "LUCK")?.value;
+            if (luckVal == null) return null;
+            const luckMax = character.initialStatus?.luck ?? luckVal;
+            return (
+              <div key="luck" className="status-chip">
+                <span className="status-chip__label">幸运</span>
+                <span className="status-chip__value">
+                  {luckMax} / {luckVal}
+                </span>
+                <div className="status-chip__bar">
+                  <div className="status-chip__bar-fill" style={{
+                    width: Math.min((luckVal / (luckMax || 1)) * 100, 100) + "%",
+                    background: "#FFD54F" }} />
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
       <div className="character-card__split">

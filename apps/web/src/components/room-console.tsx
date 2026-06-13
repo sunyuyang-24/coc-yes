@@ -993,20 +993,24 @@ export function RoomConsole() {
                           </div>
                         </div>
                       )}
-                      {char.status.luck != null && (
-                        <div className="player-mini-card__stat">
-                          <span className="player-mini-card__stat-label">幸运</span>
-                          <span className="player-mini-card__stat-val" style={{ color: "#FFD54F" }}>
-                            {char.initialStatus?.luck != null ? `${char.initialStatus.luck}/` : ""}{char.status.luck}
-                          </span>
-                          <div className="player-mini-card__stat-bar">
-                            <div className="player-mini-card__stat-fill" style={{
-                              width: char.initialStatus?.luck && typeof char.status.luck === "number" ?
-                                `${Math.min((char.status.luck / (char.initialStatus.luck || 1)) * 100, 100)}%` : "60%",
-                              background: "#FFD54F" }} />
+                      {(() => {
+                        const luckVal = char.status.luck ?? char.attributes?.find((a) => a.key === "LUCK")?.value;
+                        if (luckVal == null) return null;
+                        const luckMax = char.initialStatus?.luck ?? luckVal;
+                        return (
+                          <div className="player-mini-card__stat">
+                            <span className="player-mini-card__stat-label">幸运</span>
+                            <span className="player-mini-card__stat-val" style={{ color: "#FFD54F" }}>
+                              {luckMax}/{luckVal}
+                            </span>
+                            <div className="player-mini-card__stat-bar">
+                              <div className="player-mini-card__stat-fill" style={{
+                                width: `${Math.min((luckVal / (luckMax || 1)) * 100, 100)}%`,
+                                background: "#FFD54F" }} />
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   )}
                   {member.role !== "keeper" && !char && (
