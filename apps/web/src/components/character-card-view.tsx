@@ -191,19 +191,17 @@ export function CharacterCardView({
         ))}
       </div>
 
-      {Object.keys(character.status).length > 0 && (
-        <div className="status-panel">
+      <div className="status-panel">
           {Object.entries(character.status).map(([key, val]) => {
-            if (val == null) return null;
+            if (val == null || key === "mp") return null;
             const labels: Record<string, string> = {
-              hp: "HP", san: "SAN", mp: "MP", mov: "MOV",
+              hp: "HP", san: "SAN", mov: "MOV",
               db: "伤害加值", build: "体格", armor: "护甲"
             };
             const maxVal = character.initialStatus?.[key] ?? null;
             const pct = maxVal && typeof val === "number" && maxVal > 0 ? Math.round((val / maxVal) * 100) : null;
             const barColor = key === "hp" ? (pct != null && pct <= 25 ? "var(--danger)" : "var(--accent)")
               : key === "san" ? "#7c6ff7"
-              : key === "mp" ? "#4fc3f7"
               : null;
             return (
               <div key={key} className="status-chip">
@@ -219,8 +217,22 @@ export function CharacterCardView({
               </div>
             );
           })}
+          {/* Luck */}
+          {character.status.luck != null && (
+            <div key="luck" className="status-chip">
+              <span className="status-chip__label">幸运</span>
+              <span className="status-chip__value">
+                {character.initialStatus?.luck != null ? character.initialStatus.luck + " / " : ""}{character.status.luck}
+              </span>
+              <div className="status-chip__bar">
+                <div className="status-chip__bar-fill" style={{
+                  width: character.initialStatus?.luck && typeof character.status.luck === "number" ?
+                    Math.min((character.status.luck / (character.initialStatus.luck || 1)) * 100, 100) + "%" : "60%",
+                  background: "#FFD54F" }} />
+              </div>
+            </div>
+          )}
         </div>
-      )}
 
       <div className="character-card__split">
         <div>
