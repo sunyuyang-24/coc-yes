@@ -124,23 +124,30 @@ export function RoomConsole() {
       body: JSON.stringify({ rollerId: memberId, expression: "1d100", label, targetValue,
         bonusPenalty: bonusPenalty ?? 0 }) }); playDiceSound(); }
   async function updateCharacter(characterId: string, basic: Record<string, string>,
-    attributes: Array<{ key: string; value: number | null }>, keeperNotes: string) {
+    attributes: Array<{ key: string; value: number | null }>, keeperNotes: string,
+    lockedFields: string[], status: Record<string, number | null>) {
     if (!room || !memberId) return; await apiRequest(`/api/rooms/${room.id}/characters/${characterId}`,
-      { method: "PATCH", body: JSON.stringify({ editorId: memberId, basic, attributes, keeperNotes }) });
+      { method: "PATCH", body: JSON.stringify({ editorId: memberId, basic, attributes, keeperNotes,
+        locked_fields: lockedFields, status }) });
     const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`); setRoom(detail.room); }
   async function uploadCharacter(event: FormEvent<HTMLFormElement>) { event.preventDefault();
     if (!room || !memberId || !characterFile) return; const body = new FormData();
     body.append("ownerId", memberId); body.append("file", characterFile);
-    const response = await fetch(apiUrl(`/api/rooms/${room.id}/characters/upload`), { method: "POST", body });
-    if (!response.ok) throw new Error(await response.text());
-    const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`); setRoom(detail.room); }
+    try {
+      const response = await fetch(apiUrl(`/api/rooms/${room.id}/characters/upload`), { method: "POST", body });
+      if (!response.ok) { const errText = await response.text(); alert(`上传失败: ${errText}`); return; }
+      const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`); setRoom(detail.room);
+      setCharacterFile(null);
+    } catch (err) { alert(`上传角色卡出错: ${err instanceof Error ? err.message : "网络错误"}`); } }
   function leaveLocalRoom() { setRoom(null); setMemberId(null); window.localStorage.removeItem(STORAGE_KEY);
     document.documentElement.dataset.background = "black"; }
   async function createNPC(event: FormEvent<HTMLFormElement>) { event.preventDefault();
     if (!room || !memberId || !npcName.trim()) return; const name = npcName.trim(); setNpcName("");
     const form = new FormData(); form.append("name", name); form.append("keeperId", memberId);
-    await fetch(apiUrl("/api/rooms/" + room.id + "/characters/npc"), { method: "POST", body: form });
-    const detail = await apiRequest<RoomOnlyResponse>("/api/rooms/" + room.id); setRoom(detail.room); }
+    try {
+      await fetch(apiUrl("/api/rooms/" + room.id + "/characters/npc"), { method: "POST", body: form });
+      const detail = await apiRequest<RoomOnlyResponse>("/api/rooms/" + room.id); setRoom(detail.room);
+    } catch { /* WebSocket room_update will refresh state */ } }
   function enterRoom(nextRoom: RoomDetail, nextMemberId: string) { setRoom(nextRoom); setMemberId(nextMemberId);
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ roomId: nextRoom.id, memberId: nextMemberId })); }
   async function saveModuleIntro() {
@@ -155,16 +162,20 @@ export function RoomConsole() {
     playDiceSound(); }
   async function startCombat() { if (!room || !memberId) return;
     const form = new FormData(); form.append("editorId", memberId);
-    await fetch(apiUrl(`/api/rooms/${room.id}/combat/start`), { method: "POST", body: form }); }
+    try { await fetch(apiUrl(`/api/rooms/${room.id}/combat/start`), { method: "POST", body: form }); }
+    catch { /* ignore */ } }
   async function endCombat() { if (!room || !memberId) return;
     const form = new FormData(); form.append("editorId", memberId);
-    await fetch(apiUrl(`/api/rooms/${room.id}/combat/end`), { method: "POST", body: form }); }
+    try { await fetch(apiUrl(`/api/rooms/${room.id}/combat/end`), { method: "POST", body: form }); }
+    catch { /* ignore */ } }
   async function startChase() { if (!room || !memberId) return;
     const form = new FormData(); form.append("editorId", memberId);
-    await fetch(apiUrl(`/api/rooms/${room.id}/chase/start`), { method: "POST", body: form }); }
+    try { await fetch(apiUrl(`/api/rooms/${room.id}/chase/start`), { method: "POST", body: form }); }
+    catch { /* ignore */ } }
   async function endChase() { if (!room || !memberId) return;
     const form = new FormData(); form.append("editorId", memberId);
-    await fetch(apiUrl(`/api/rooms/${room.id}/chase/end`), { method: "POST", body: form }); }
+    try { await fetch(apiUrl(`/api/rooms/${room.id}/chase/end`), { method: "POST", body: form }); }
+    catch { /* ignore */ } }
   const isKeeper = currentMember?.role === "keeper";
 
 
@@ -263,7 +274,8 @@ export function RoomConsole() {
               onChange={async (e) => {
                 const form = new FormData(); form.append("theme", e.target.value);
                 form.append("editorId", memberId || "");
-                await fetch(apiUrl("/api/rooms/" + room.id + "/theme"), { method: "POST", body: form });
+                try { await fetch(apiUrl("/api/rooms/" + room.id + "/theme"), { method: "POST", body: form }); }
+                catch { /* ignore */ }
               }}>
               <option value="black">纯黑</option>
               <option value="graphite">深灰</option>

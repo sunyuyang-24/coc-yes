@@ -561,7 +561,7 @@ async def room_socket(websocket: WebSocket, room_id: str, member_id: str) -> Non
                         "from": member_id,
                         "muted": payload.get("muted"),
                     }, store)
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
         heartbeat_task.cancel()

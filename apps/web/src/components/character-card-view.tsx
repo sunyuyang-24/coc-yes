@@ -19,7 +19,9 @@ export function CharacterCardView({
     characterId: string,
     basic: Record<string, string>,
     attributes: Array<{ key: string; value: number | null }>,
-    keeperNotes: string
+    keeperNotes: string,
+    lockedFields: string[],
+    status: Record<string, number | null>
   ) => Promise<void>;
 }) {
   const [skillSearch, setSkillSearch] = useState("");
@@ -81,7 +83,9 @@ export function CharacterCardView({
         key: attribute.key,
         value: attributeDrafts[attribute.key] ? Number(attributeDrafts[attribute.key]) : null
       })),
-      keeperNotes
+      keeperNotes,
+      lockedFields,
+      statusDrafts
     );
     setEditing(false);
   }
@@ -165,9 +169,6 @@ export function CharacterCardView({
           <div key={attribute.key}>
             <span>{attribute.key}</span>
             <strong>{attribute.value ?? "?"}</strong>
-            <small>
-              困难 {attribute.half ?? "?"} · 极难 {attribute.fifth ?? "?"}
-            </small>
             <small>
               困难 {attribute.half ?? "?"} · 极难 {attribute.fifth ?? "?"}
             </small>

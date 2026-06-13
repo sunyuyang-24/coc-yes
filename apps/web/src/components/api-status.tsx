@@ -18,7 +18,7 @@ export function ApiStatus() {
 
   return (
     <span className="api-status-inline">
-      <span className={`api-dot \${online ? "api-dot--online" : "api-dot--offline"}`} />
+      <span className={`api-dot ${online ? "api-dot--online" : "api-dot--offline"}`} />
       {online ? "API 在线" : "API 离线"}
     </span>
   );
