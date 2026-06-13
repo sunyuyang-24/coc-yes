@@ -138,6 +138,13 @@
 .chat-bubble__sender--kp { color: var(--brand); }
 .chat-bubble__sender--player { color: var(--text-secondary); }
 .chat-bubble__time { color: var(--text-muted); margin-left: auto; font-size: 11px; }
+.chat-bubble__delete {
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 12px; padding: 1px 5px; border-radius: 3px;
+  opacity: 0; transition: opacity 120ms ease, color 120ms ease;
+}
+.chat-bubble:hover .chat-bubble__delete { opacity: 1; }
+.chat-bubble__delete:hover { color: var(--error); }
 .chat-bubble__reply {
   padding: 4px 8px; margin-bottom: 6px; background: var(--bg-raised);
   border-left: 2px solid var(--border-hover); border-radius: 0 4px 4px 0;
@@ -470,6 +477,33 @@
 @keyframes card-rise {
   from { opacity: 0; transform: translateY(32px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* KP character selector chips */
+.fn-dropdown__chars {
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.fn-dropdown__char-chip {
+  padding: 5px 14px; border: 1px solid var(--border); border-radius: 16px;
+  background: var(--bg); color: var(--text-secondary); font-family: var(--font);
+  font-size: 12px; cursor: pointer; transition: all 120ms ease;
+}
+.fn-dropdown__char-chip:hover { border-color: var(--brand); color: var(--text); }
+.fn-dropdown__char-chip--active {
+  background: var(--brand); color: #fff; border-color: var(--brand);
+}
+
+/* Character file upload chip */
+.left-toolbar__file-chip {
+  display: inline-block; width: 100%; padding: 8px 12px;
+  border: 1px solid var(--border); border-radius: 16px;
+  background: var(--bg); color: var(--text-secondary); font-family: var(--font);
+  font-size: 12px; cursor: pointer; text-align: center; transition: all 120ms ease;
+}
+.left-toolbar__file-chip:hover { border-color: var(--brand); color: var(--text); }
+.left-toolbar__file-chip--active {
+  border-color: var(--brand); color: var(--brand);
 }
 
 /* Modal / Drawer */

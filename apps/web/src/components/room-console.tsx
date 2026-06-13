@@ -35,8 +35,11 @@ function playDiceSound() {
       gain.gain.setValueAtTime(0.15, now + i * 0.06); gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.1);
       osc.connect(gain); gain.connect(ctx.destination); osc.start(now + i * 0.06); osc.stop(now + i * 0.06 + 0.1); } }); } catch { /* ignore */ }
 }
+function isNpcChar(c: CharacterCard): boolean {
+  return !!(c.isNpc) || (c.sourceFileName || "").startsWith("npc");
+}
 function findMemberChar(memberId: string, chars: CharacterCard[] | undefined): CharacterCard | undefined {
-  return chars?.find((c) => c.ownerId === memberId && c.active !== false);
+  return chars?.find((c) => c.ownerId === memberId && c.active !== false && !isNpcChar(c));
 }
 
 export function RoomConsole() {
@@ -53,6 +56,7 @@ export function RoomConsole() {
   const [bonusPenalty, setBonusPenalty] = useState("0"); const [hiddenRoll, setHiddenRoll] = useState(false);
   const [replyTo, setReplyTo] = useState<{ id: string; senderName: string; content: string } | null>(null);
   const [privateTarget, setPrivateTarget] = useState(""); const [npcName, setNpcName] = useState("");
+  const [npcText, setNpcText] = useState(""); const [npcCreating, setNpcCreating] = useState(false);
   const [messageSearch, setMessageSearch] = useState("");
   const [characterFile, setCharacterFile] = useState<File | null>(null); const [notice, setNotice] = useState("");
   useEffect(() => { if (!notice) return; const id = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(id); }, [notice]);
@@ -71,6 +75,8 @@ export function RoomConsole() {
   const [showSanCheckPanel, setShowSanCheckPanel] = useState(false);
   const [showCombatPanel, setShowCombatPanel] = useState(false);
   const [showChasePanel, setShowChasePanel] = useState(false);
+  const [showNpcPanel, setShowNpcPanel] = useState(false);
+  const [showNpcList, setShowNpcList] = useState(false);
   const [kpCheckCharId, setKpCheckCharId] = useState("");
   const [attachment, setAttachment] = useState<{ url: string; filename: string; size: number; contentType: string } | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -146,31 +152,6 @@ export function RoomConsole() {
     } catch (err) { alert(`上传出错: ${err instanceof Error ? err.message : "网络错误"}`); return null; }
     finally { setUploading(false); }
   }
-  async function captureScreenshot() {
-    if (!room || !memberId) return;
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      const video = document.createElement("video");
-      video.srcObject = stream;
-      await video.play();
-      const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) { stream.getTracks().forEach(t => t.stop()); return; }
-      ctx.drawImage(video, 0, 0);
-      stream.getTracks().forEach(t => t.stop());
-      const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, "image/png"));
-      if (!blob) return;
-      const file = new File([blob], `screenshot-${Date.now()}.png`, { type: "image/png" });
-      const result = await uploadFile(file);
-      if (result) setAttachment(result);
-    } catch (err) {
-      if (err instanceof Error && err.name !== "AbortError") {
-        alert(`截图失败: ${err.message}`);
-      }
-    }
-  }
   async function sendMessage(event: FormEvent<HTMLFormElement>) { event.preventDefault();
     if (!room || !memberId) return;
     if (!draft.trim() && !attachment) return;
@@ -213,6 +194,10 @@ export function RoomConsole() {
     } catch (err) { alert(`上传角色卡出错: ${err instanceof Error ? err.message : "网络错误"}`); } }
   const [showKpLeaveConfirm, setShowKpLeaveConfirm] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [deleteMsgId, setDeleteMsgId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteNpcId, setDeleteNpcId] = useState<string | null>(null);
+  const [deletingNpc, setDeletingNpc] = useState(false);
   async function leaveLocalRoom() {
     if (!room || !memberId) return;
     setLeaving(true);
@@ -231,6 +216,27 @@ export function RoomConsole() {
       setLeaving(false); setShowKpLeaveConfirm(false);
     }
   }
+  async function deleteMessage() {
+    if (!room || !memberId || !deleteMsgId) return;
+    setDeleting(true);
+    try {
+      const form = new FormData(); form.append("editorId", memberId);
+      await fetch(apiUrl(`/api/rooms/${room.id}/messages/${deleteMsgId}/delete`), { method: "POST", body: form });
+      const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`); setRoom(detail.room);
+    } catch { /* WebSocket room_update will refresh */ }
+    finally { setDeleting(false); setDeleteMsgId(null); }
+  }
+  async function deleteNpc() {
+    if (!room || !memberId || !deleteNpcId) return;
+    setDeletingNpc(true);
+    try {
+      const form = new FormData(); form.append("editorId", memberId);
+      await fetch(apiUrl(`/api/rooms/${room.id}/characters/${deleteNpcId}/delete`), { method: "POST", body: form });
+      const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`); setRoom(detail.room);
+      setSelectedCharId(null);
+    } catch { /* WebSocket room_update will refresh */ }
+    finally { setDeletingNpc(false); setDeleteNpcId(null); }
+  }
   async function createNPC(event: FormEvent<HTMLFormElement>) { event.preventDefault();
     if (!room || !memberId || !npcName.trim()) return; const name = npcName.trim(); setNpcName("");
     const form = new FormData(); form.append("name", name); form.append("keeperId", memberId);
@@ -238,6 +244,18 @@ export function RoomConsole() {
       await fetch(apiUrl("/api/rooms/" + room.id + "/characters/npc"), { method: "POST", body: form });
       const detail = await apiRequest<RoomOnlyResponse>("/api/rooms/" + room.id); setRoom(detail.room);
     } catch { /* WebSocket room_update will refresh state */ } }
+  async function createNPCFromText() {
+    if (!room || !memberId || !npcText.trim()) return;
+    setNpcCreating(true);
+    try {
+      const form = new FormData(); form.append("keeperId", memberId); form.append("npcText", npcText.trim());
+      const res = await fetch(apiUrl(`/api/rooms/${room.id}/characters/npc/text`), { method: "POST", body: form });
+      if (!res.ok) { const err = await res.json(); setNotice(`NPC 创建失败: ${err.detail || res.statusText}`); return; }
+      setNpcText(""); setShowNpcPanel(false);
+      const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}`); setRoom(detail.room);
+    } catch { /* WebSocket room_update will refresh */ }
+    finally { setNpcCreating(false); }
+  }
   function enterRoom(nextRoom: RoomDetail, nextMemberId: string) { setRoom(nextRoom); setMemberId(nextMemberId);
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ roomId: nextRoom.id, memberId: nextMemberId })); }
   async function saveModuleIntro() {
@@ -454,6 +472,69 @@ export function RoomConsole() {
                   <SummaryPanel room={room} memberId={memberId!} isKeeper={isKeeper} />
                 </div>
               )}
+              <button className={`left-toolbar__btn ${showNpcPanel ? "left-toolbar__btn--active" : ""}`}
+                onClick={() => { setShowNpcPanel(!showNpcPanel); setShowNpcList(false); }} type="button">🧟 新建 NPC</button>
+              {showNpcPanel && (
+                <div className="left-toolbar__panel">
+                  <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: "0 0 8px" }}>
+                    输入属性文本，自动解析创建 NPC 角色卡。支持中英文属性名
+                  </p>
+                  <textarea
+                    value={npcText}
+                    onChange={(e) => setNpcText(e.target.value)}
+                    placeholder={"例如：\n梅洛迪亚斯·杰弗逊 58岁，守墓人\n力量 45 体质 65 体型 60 敏捷 50\n智力 70 外貌 55 意志 60 教育 65\n理智值 60 HP 12\n技能: 侦查 55, 潜行 40\n武器: 铁锹 1d6\n背景: 一个老守墓人"}
+                    rows={10}
+                    style={{
+                      width: "100%", padding: "8px 10px", background: "var(--bg)",
+                      border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                      color: "var(--text)", fontFamily: "var(--font)", fontSize: "12px",
+                      outline: "none", resize: "vertical", lineHeight: "1.5",
+                    }}
+                  />
+                  <button className="button button--primary button--sm"
+                    onClick={createNPCFromText} type="button" disabled={npcCreating || !npcText.trim()}
+                    style={{ marginTop: "8px", width: "100%" }}>
+                    {npcCreating ? "创建中..." : "创建 NPC"}
+                  </button>
+                </div>
+              )}
+              {/* Existing NPC list */}
+              {room.characters?.filter((c) => isNpcChar(c)).length ? (
+                <>
+                  <button className={`left-toolbar__btn ${showNpcList ? "left-toolbar__btn--active" : ""}`}
+                    onClick={() => { setShowNpcList(!showNpcList); setShowNpcPanel(false); }} type="button">
+                    📋 NPC 列表 ({room.characters.filter((c) => isNpcChar(c)).length})
+                  </button>
+                  {showNpcList && (
+                    <div className="left-toolbar__panel">
+                      {room.characters.filter((c) => isNpcChar(c)).map((npc) => (
+                        <div key={npc.id} style={{
+                          display: "flex", alignItems: "center", gap: "8px",
+                          padding: "6px 8px", borderRadius: "var(--radius-sm)",
+                          cursor: "pointer", fontSize: "13px",
+                          background: selectedCharId === npc.id ? "var(--bg-active)" : "transparent",
+                        }}>
+                          <span style={{ flex: 1, color: selectedCharId === npc.id ? "var(--brand)" : "var(--text-secondary)" }}
+                            onClick={() => setSelectedCharId(selectedCharId === npc.id ? null : npc.id)}>
+                            {npc.basic?.name || "未命名"}
+                          </span>
+                          <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                            HP {npc.status?.hp ?? "?"}
+                          </span>
+                          <button type="button"
+                            onClick={(e) => { e.stopPropagation(); setDeleteNpcId(npc.id); }}
+                            title="删除 NPC"
+                            style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "12px", padding: "1px 4px", borderRadius: "3px" }}
+                            onMouseOver={(e) => (e.currentTarget.style.color = "var(--error)")}
+                            onMouseOut={(e) => (e.currentTarget.style.color = "var(--text-muted)")}>
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : null}
             </div>
           )}
 
@@ -471,32 +552,34 @@ export function RoomConsole() {
             </div>
           </div>
 
-          {/* Character card upload */}
-          <div className="left-toolbar__section">
-            <p className="left-toolbar__label">角色卡</p>
-            <form onSubmit={uploadCharacter} style={{ display: "flex", flexDirection: "column", gap: "6px", padding: "4px 8px" }}>
-              <label style={{ fontSize: "11px", color: "var(--text-secondary)", cursor: "pointer" }}>
-                <input type="file" accept=".xlsx,.xls,.json,.txt"
-                  onChange={(e) => { const file = e.target.files?.[0]; if (file) setCharacterFile(file); }}
-                  style={{ display: "none" }}
-                  id="character-file-input" />
-                <span className="button button--ghost button--sm" style={{ display: "inline-block", width: "100%", textAlign: "center", cursor: "pointer" }}
-                  onClick={() => document.getElementById("character-file-input")?.click()}>
-                  {characterFile ? characterFile.name : myChar ? "更换角色卡文件" : "选择角色卡文件"}
-                </span>
-              </label>
-              {characterFile && (
-                <button className="button button--primary button--sm" type="submit">
-                  {myChar ? "更新角色卡" : "上传角色卡"}
-                </button>
-              )}
-              {myChar && !characterFile && (
-                <span style={{ fontSize: "11px", color: "var(--success)", padding: "0 4px" }}>
-                  已绑定: {myChar.basic?.name || "未命名"}
-                </span>
-              )}
-            </form>
-          </div>
+          {/* Character card upload — only for players */}
+          {!isKeeper && (
+            <div className="left-toolbar__section">
+              <p className="left-toolbar__label">角色卡</p>
+              <form onSubmit={uploadCharacter} style={{ display: "flex", flexDirection: "column", gap: "6px", padding: "4px 8px" }}>
+                <label style={{ fontSize: "11px", color: "var(--text-secondary)", cursor: "pointer" }}>
+                  <input type="file" accept=".xlsx,.xls,.json,.txt"
+                    onChange={(e) => { const file = e.target.files?.[0]; if (file) setCharacterFile(file); }}
+                    style={{ display: "none" }}
+                    id="character-file-input" />
+                  <span className={`left-toolbar__file-chip${characterFile || myChar ? " left-toolbar__file-chip--active" : ""}`}
+                    onClick={() => document.getElementById("character-file-input")?.click()}>
+                    {characterFile ? characterFile.name : myChar ? "更换角色卡文件" : "选择角色卡文件"}
+                  </span>
+                </label>
+                {characterFile && (
+                  <button className="button button--primary button--sm" type="submit">
+                    {myChar ? "更新角色卡" : "上传角色卡"}
+                  </button>
+                )}
+                {myChar && !characterFile && (
+                  <span style={{ fontSize: "11px", color: "var(--success)", padding: "0 4px" }}>
+                    已绑定: {myChar.basic?.name || "未命名"}
+                  </span>
+                )}
+              </form>
+            </div>
+          )}
         </aside>
 
 
@@ -529,6 +612,11 @@ export function RoomConsole() {
                         {isHidden && <span style={{ fontSize: "10px", color: "var(--error)" }}>暗投</span>}
                         {isPrivate && <span style={{ fontSize: "10px", color: "#7C6FF7" }}>私密</span>}
                         <span className="chat-bubble__time">{formatTime(message.createdAt)}</span>
+                        {(isKeeper || message.senderId === memberId) && (
+                          <button type="button" className="chat-bubble__delete"
+                            onClick={() => setDeleteMsgId(message.id)}
+                            title="删除消息">✕</button>
+                        )}
                       </div>
                     )}
                     {message.replyTo && (
@@ -584,15 +672,14 @@ export function RoomConsole() {
               {showSkillDropdown && (
                 <div className="fn-dropdown">
                   {isKeeper && (
-                    <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
-                      <select value={kpCheckCharId} onChange={(e) => setKpCheckCharId(e.target.value)}
-                        style={{ width: "100%", height: "30px", fontSize: "12px", borderRadius: "var(--radius)",
-                          border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", padding: "0 8px" }}>
-                        <option value="">选择角色卡...</option>
-                        {room.characters?.filter((c) => c.active !== false).map((c) => (
-                          <option key={c.id} value={c.id}>{c.basic?.name || "未命名"} {c.ownerId === memberId ? "(我)" : ""}</option>
-                        ))}
-                      </select>
+                    <div className="fn-dropdown__chars">
+                      {room.characters?.filter((c) => c.active !== false).map((c) => (
+                        <button key={c.id} type="button"
+                          className={`fn-dropdown__char-chip${kpCheckCharId === c.id ? " fn-dropdown__char-chip--active" : ""}`}
+                          onClick={() => setKpCheckCharId(kpCheckCharId === c.id ? "" : c.id)}>
+                          {c.basic?.name || "未命名"}{c.ownerId === memberId ? "(我)" : ""}
+                        </button>
+                      ))}
                     </div>
                   )}
                   {(isKeeper ? kpCheckCharId : myChar) && (
@@ -638,15 +725,14 @@ export function RoomConsole() {
               {showAttrDropdown && (
                 <div className="fn-dropdown">
                   {isKeeper && (
-                    <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
-                      <select value={kpCheckCharId} onChange={(e) => setKpCheckCharId(e.target.value)}
-                        style={{ width: "100%", height: "30px", fontSize: "12px", borderRadius: "var(--radius)",
-                          border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", padding: "0 8px" }}>
-                        <option value="">选择角色卡...</option>
-                        {room.characters?.filter((c) => c.active !== false).map((c) => (
-                          <option key={c.id} value={c.id}>{c.basic?.name || "未命名"} {c.ownerId === memberId ? "(我)" : ""}</option>
-                        ))}
-                      </select>
+                    <div className="fn-dropdown__chars">
+                      {room.characters?.filter((c) => c.active !== false).map((c) => (
+                        <button key={c.id} type="button"
+                          className={`fn-dropdown__char-chip${kpCheckCharId === c.id ? " fn-dropdown__char-chip--active" : ""}`}
+                          onClick={() => setKpCheckCharId(kpCheckCharId === c.id ? "" : c.id)}>
+                          {c.basic?.name || "未命名"}{c.ownerId === memberId ? "(我)" : ""}
+                        </button>
+                      ))}
                     </div>
                   )}
                   {(isKeeper ? kpCheckCharId : myChar) && (
@@ -786,10 +872,6 @@ export function RoomConsole() {
                 title="上传文件">
                 📎
               </button>
-              <button type="button" className="composer-bar__icon-btn"
-                onClick={captureScreenshot} title="截图">
-                📷
-              </button>
               <input type="file" id="composer-file-input" style={{ display: "none" }}
                 accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.txt,.md,.json,.csv"
                 onChange={async (e) => {
@@ -837,21 +919,47 @@ export function RoomConsole() {
             </div>
           )}
           <div className="right-panel__members">
-            {room.members.filter((m) => m.role !== "spectator").map((member) => {
+            {/* KP card */}
+            {(() => {
+              const kpMember = room.members.find((m) => m.role === "keeper");
+              const kpChar = kpMember ? findMemberChar(kpMember.id, room.characters) : undefined;
+              if (!kpMember) return null;
+              return (
+                <div key={kpMember.id}
+                  className="player-mini-card"
+                  onClick={() => { if (kpChar) setSelectedCharId(selectedCharId === kpChar.id ? null : kpChar.id); }}>
+                  <div className="player-mini-card__header">
+                    <div className="player-mini-card__avatar"
+                      style={{ color: "var(--warning)" }}>
+                      {kpMember.displayName.charAt(0)}
+                    </div>
+                    <div>
+                      <div className="player-mini-card__name">KP · {kpMember.displayName}</div>
+                      <div className="player-mini-card__player">
+                        {kpMember.online ? "在线" : "离线"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+            {/* Separator */}
+            <div style={{ borderTop: "1px solid var(--border)", margin: "6px 8px" }} />
+            {/* Player cards */}
+            {room.members.filter((m) => m.role === "player").map((member) => {
               const char = findMemberChar(member.id, room.characters);
               return (
                 <div key={member.id}
-                  className={`player-mini-card ${!char && member.role !== "keeper" ? "player-mini-card--npc" : ""}`}
+                  className={`player-mini-card ${!char ? "player-mini-card--npc" : ""}`}
                   onClick={() => { if (char) setSelectedCharId(selectedCharId === char.id ? null : char.id); }}>
                   <div className="player-mini-card__header">
-                    <div className="player-mini-card__avatar"
-                      style={member.role === "keeper" ? { color: "var(--warning)" } : {}}>
+                    <div className="player-mini-card__avatar">
                       {(char?.basic?.name || member.displayName).charAt(0)}
                     </div>
                     <div>
                       <div className="player-mini-card__name">{char?.basic?.name || member.displayName}</div>
                       <div className="player-mini-card__player">
-                        {member.displayName} {member.role === "keeper" ? "· KP" : ""} {member.online ? "在线" : "离线"}
+                        {member.displayName} {member.online ? "在线" : "离线"}
                       </div>
                     </div>
                   </div>
@@ -995,6 +1103,54 @@ export function RoomConsole() {
         </div>
       )}
 
+      {/* Delete Message Confirmation */}
+      {deleteMsgId && (
+        <div className="modal-overlay" onClick={() => !deleting && setDeleteMsgId(null)}>
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "380px", textAlign: "center" }}>
+            <p style={{ fontSize: "15px", color: "var(--text)", margin: "0 0 8px", fontWeight: 600 }}>
+              确定要删除这条消息吗
+            </p>
+            <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: "0 0 20px" }}>
+              删除后无法恢复
+            </p>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+              <button className="button button--ghost" style={{ borderRadius: "12px", padding: "8px 32px" }}
+                onClick={deleteMessage} type="button" disabled={deleting}>
+                {deleting ? "删除中..." : "确定"}
+              </button>
+              <button className="button button--danger" style={{ borderRadius: "12px", padding: "8px 32px" }}
+                onClick={() => setDeleteMsgId(null)} type="button" disabled={deleting}>
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete NPC Confirmation */}
+      {deleteNpcId && (
+        <div className="modal-overlay" onClick={() => !deletingNpc && setDeleteNpcId(null)}>
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "380px", textAlign: "center" }}>
+            <p style={{ fontSize: "15px", color: "var(--text)", margin: "0 0 8px", fontWeight: 600 }}>
+              确定要删除这个 NPC 角色卡吗
+            </p>
+            <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: "0 0 20px" }}>
+              删除后无法恢复
+            </p>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+              <button className="button button--ghost" style={{ borderRadius: "12px", padding: "8px 32px" }}
+                onClick={deleteNpc} type="button" disabled={deletingNpc}>
+                {deletingNpc ? "删除中..." : "确定"}
+              </button>
+              <button className="button button--danger" style={{ borderRadius: "12px", padding: "8px 32px" }}
+                onClick={() => setDeleteNpcId(null)} type="button" disabled={deletingNpc}>
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Character Card Drawer */}
       {selectedChar && (
         <div className="modal-overlay" onClick={() => setSelectedCharId(null)}>
@@ -1013,7 +1169,9 @@ export function RoomConsole() {
 }
 
 function DiceRollView({ roll }: { roll: DiceRollResult }) {
-  if (roll.hidden) {
+  // Backend strips total/breakdown for non-KP members on hidden rolls
+  const hiddenFromViewer = roll.hidden && roll.total == null;
+  if (hiddenFromViewer) {
     return (
       <div className="chat-roll-result">
         <div className="chat-roll-result__dice">?</div>
@@ -1036,6 +1194,7 @@ function DiceRollView({ roll }: { roll: DiceRollResult }) {
       <div className="chat-roll-result__dice">{roll.total}</div>
       <div>
         <span className="chat-roll-result__label">{roll.label || roll.expression}</span>
+        {roll.hidden && <span style={{ fontSize: "10px", color: "var(--error)", marginLeft: "4px" }}>暗投</span>}
         {roll.successLabel && (
           <span className={roll.isSuccess ? "chat-roll-result__success" : "chat-roll-result__fail"}>
             {" "}{roll.successLabel}

@@ -89,34 +89,30 @@ class RoomStore:
             return deepcopy(room)
 
     def get_room_sanitized(self, room_id: str, member_id: str) -> dict:
-        """返回对指定成员过滤后的房间数据。非 KP 成员看不到暗骰细节和私密消息。"""
+        """返回对指定成员过滤后的房间数据。非 KP 成员看不到暗骰和私密消息。"""
         with self._lock:
             room = deepcopy(self._require_room(room_id))
         member = self._find_member(room, member_id)
         is_keeper = member["role"] == "keeper"
+
+        if not is_keeper:
+            # 完全移除暗骰消息
+            room["messages"] = [
+                m for m in room.get("messages", [])
+                if not (m.get("type") == "dice_roll" and m.get("roll") and m["roll"].get("hidden"))
+            ]
+
+            # 完全移除暗骰记录
+            room["rolls"] = [
+                r for r in room.get("rolls", [])
+                if not r.get("hidden")
+            ]
 
         # 过滤聊天消息中的私密消息
         room["messages"] = [
             m for m in room.get("messages", [])
             if not m.get("privateTo") or m.get("privateTo") == member_id or m.get("senderId") == member_id or is_keeper
         ]
-
-        # 过滤投掷详情：非 KP 看暗骰只显示 hidden=true, total=null
-        if not is_keeper and "rolls" in room:
-            for roll in room["rolls"]:
-                if roll.get("hidden"):
-                    roll["total"] = None
-                    roll["breakdown"] = []
-                    roll["successLevel"] = None
-                    roll["successLabel"] = None
-
-        # 过滤聊天中暗骰消息的敏感数据
-        for msg in room.get("messages", []):
-            if msg.get("type") == "dice_roll" and msg.get("roll") and msg["roll"].get("hidden") and not is_keeper:
-                msg["roll"]["total"] = None
-                msg["roll"]["breakdown"] = []
-                msg["roll"]["successLevel"] = None
-                msg["roll"]["successLabel"] = None
 
         return room
 
@@ -192,7 +188,7 @@ class RoomStore:
             "SIZ": "体型", "INT": "智力", "LUCK": "幸运",
         }
         character = {
-            "basic": {"name": name, "occupation": "NPC"},
+            "basic": {"name": f"{name} (NPC)", "occupation": "NPC"},
             "attributes": [
                 {"key": k, "label": v, "value": 50, "half": 25, "fifth": 10}
                 for k, v in label_map.items()
@@ -205,7 +201,270 @@ class RoomStore:
             "weapons": [{"name": "拳头", "damage": "1d3", "skill": "拳头/摔跌"}],
             "background": {}, "experiences": [], "spells": [],
             "warnings": [], "sourceFileName": "npc",
+            "isNpc": True,
         }
+        return self.add_character(room_id, keeper_id, character, replace_existing=False)
+
+    def create_npc_from_text(self, room_id: str, keeper_id: str, npc_text: str) -> dict:
+        """Parse free-form NPC text and create a character card."""
+        import re
+
+        label_map = {
+            "STR": "力量", "DEX": "敏捷", "POW": "意志",
+            "CON": "体质", "APP": "外貌", "EDU": "教育",
+            "SIZ": "体型", "INT": "智力", "LUCK": "幸运",
+        }
+
+        # Default values
+        attrs: dict[str, int] = {k: 50 for k in label_map}
+        name = "NPC"
+        occupation = "NPC"
+        skills: list[dict] = []
+        weapons: list[dict] = []
+        background_parts: list[str] = []
+        hp_override: int | None = None
+        san_override: int | None = None
+        mp_override: int | None = None
+        mov_override: int | None = None
+        armor_override: int = 0
+        db_override: str | None = None
+        build_override: int | None = None
+
+        text = npc_text.strip()
+
+        # ── Name extraction ──
+        # Check for explicit name prefixes
+        name_prefixes = ["名称:", "姓名:", "名字:", "name:", "npc名:", "npc名称:"]
+        for prefix in name_prefixes:
+            if text.lower().startswith(prefix.lower()):
+                rest = text[len(prefix):].lstrip()
+                # Name is everything up to the first newline or comma-period
+                m = re.match(r'([^\n，,。.]+)', rest)
+                if m:
+                    name = m.group(1).strip()
+                    text = rest[m.end():].strip()
+                break
+        else:
+            # If first line contains Chinese attribute keywords, it's not a name line
+            first_line = text.split("\n")[0].strip()
+            cn_attr_kw = ["力量", "体质", "体型", "敏捷", "智力", "外貌", "意志", "教育", "幸运", "理智", "生命"]
+            has_cn_attr = any(kw in first_line for kw in cn_attr_kw)
+            has_en_attr = bool(re.search(r'\b(STR|CON|DEX|APP|POW|SIZ|INT|EDU|LUCK)\s*\d+', first_line, re.IGNORECASE))
+            if not has_cn_attr and not has_en_attr:
+                # First line is name/description: "梅洛迪亚斯·杰弗逊 58岁，守墓人"
+                # Extract name (before age/occupation markers)
+                name_match = re.match(r'^(.+?)(?:\s+\d+岁|\s*[，,]\s*\S+)?$', first_line)
+                if name_match:
+                    name = name_match.group(1).strip()
+                    text = text[len(first_line):].strip()
+                    # Try to extract age and occupation from the same line
+                    age_m = re.search(r'(\d+)\s*岁', first_line)
+                    occ_m = re.search(r'[，,]\s*(.+?)$', first_line)
+                    if age_m:
+                        background_parts.append(f"年龄: {age_m.group(1)}")
+                    if occ_m:
+                        occupation = occ_m.group(1).strip()
+
+        # Section splitting
+        skill_section = ""
+        weapon_section = ""
+        bg_section = ""
+
+        # Try to split by section markers
+        section_markers = [
+            (r'技能[：:]', 'skills'),
+            (r'武器[：:]', 'weapons'),
+            (r'背景[：:]', 'background'),
+            (r'装备[：:]', 'weapons'),
+            (r'描述[：:]', 'background'),
+        ]
+
+        remaining = text
+        sections: list[tuple[str, str]] = []  # (type, content)
+        current_type = "attrs"
+        current_content: list[str] = []
+
+        for line in text.split("\n"):
+            line_stripped = line.strip()
+            if not line_stripped:
+                continue
+            matched = False
+            for pattern, stype in section_markers:
+                m = re.match(pattern, line_stripped, re.IGNORECASE)
+                if m:
+                    if current_content:
+                        sections.append((current_type, "\n".join(current_content)))
+                    current_type = stype
+                    current_content = [line_stripped[m.end():].strip()] if line_stripped[m.end():].strip() else []
+                    matched = True
+                    break
+            if not matched:
+                current_content.append(line_stripped)
+        if current_content:
+            sections.append((current_type, "\n".join(current_content)))
+
+        for stype, content in sections:
+            if stype == "attrs":
+                # Parse English attribute values: STR 70 CON 60 DEX 50 etc.
+                attr_pattern_en = re.compile(r'\b(STR|CON|DEX|APP|POW|SIZ|INT|EDU|LUCK)\s*[：:=\s]*\s*(\d{1,3})\b', re.IGNORECASE)
+                for m in attr_pattern_en.finditer(content):
+                    key = m.group(1).upper()
+                    val = int(m.group(2))
+                    if 1 <= val <= 999:
+                        attrs[key] = val
+
+                # Parse Chinese attribute values: 力量 45 体质 65 体型 60 etc.
+                cn_attr_map = {
+                    "力量": "STR", "体质": "CON", "体型": "SIZ", "敏捷": "DEX",
+                    "智力": "INT", "外貌": "APP", "意志": "POW", "教育": "EDU",
+                    "幸运": "LUCK", "灵感": "INT",
+                }
+                for cn_name, en_key in cn_attr_map.items():
+                    # Pattern: 力量 45 or 力量45 or 力量:45
+                    for m in re.finditer(re.escape(cn_name) + r'\s*[：:=\s]*\s*(\d{1,3})', content):
+                        val = int(m.group(1))
+                        if 1 <= val <= 999:
+                            attrs[en_key] = val
+
+                # Parse HP/SAN/MP/MOV/Armor overrides (English + Chinese)
+                for m in re.finditer(r'\b(?:HP|生命值?)\s*[：:=\s]*\s*(\d{1,4})\b', content, re.IGNORECASE):
+                    hp_override = int(m.group(1))
+                for m in re.finditer(r'\b(?:SAN|理智值?|理智)\s*[：:=\s]*\s*(\d{1,4})\b', content, re.IGNORECASE):
+                    san_override = int(m.group(1))
+                for m in re.finditer(r'\b(?:MP|魔法值?)\s*[：:=\s]*\s*(\d{1,4})\b', content, re.IGNORECASE):
+                    mp_override = int(m.group(1))
+                for m in re.finditer(r'\b(?:MOV|移动速度?|移动)\s*[：:=\s]*\s*(\d{1,2})\b', content, re.IGNORECASE):
+                    mov_override = int(m.group(1))
+                for m in re.finditer(r'(?:护甲|装甲|ARMOR?)\s*[：:=\s]*\s*(\d{1,2})\b', content, re.IGNORECASE):
+                    armor_override = int(m.group(1))
+                for m in re.finditer(r'\b(DB|伤害加值)\s*[：:=\s]*\s*([+-]?\d{1,2}[dD]\d{1,2}|[+-]?\d+)\b', content, re.IGNORECASE):
+                    db_override = m.group(2)
+                for m in re.finditer(r'\bBUILD\s*[：:=\s]*\s*(\d{1,2})\b', content, re.IGNORECASE):
+                    build_override = int(m.group(1))
+
+                # Parse age: 58岁 or 年龄: 58
+                age_m = re.search(r'(?:年龄|岁数)?\s*[：:=\s]*\s*(\d{1,3})\s*岁', content)
+                if age_m:
+                    background_parts.append(f"年龄: {age_m.group(1)}")
+
+                # Parse occupation
+                occ_m = re.search(r'(?:职业|OCCUPATION)\s*[：:=\s]*\s*(.+?)$', content, re.IGNORECASE | re.MULTILINE)
+                if occ_m:
+                    occupation = occ_m.group(1).strip()
+
+            elif stype == "skills":
+                # Parse skills: 技能名 数值, 技能名 数值
+                skill_parts = re.split(r'[,，;；\n]', content)
+                for part in skill_parts:
+                    part = part.strip()
+                    if not part:
+                        continue
+                    # Match: name number (number may contain parentheses like "格斗(斗殴) 60")
+                    sm = re.match(r'(.+?)\s+(\d{1,3})\s*$', part)
+                    if sm:
+                        sname = sm.group(1).strip()
+                        sval = int(sm.group(2))
+                        if 0 <= sval <= 999:
+                            skills.append({
+                                "name": sname,
+                                "value": sval,
+                                "half": sval // 2,
+                                "fifth": sval // 5,
+                            })
+
+            elif stype == "weapons":
+                # Parse weapons: 武器名 伤害表达式
+                wp_lines = re.split(r'[\n;；]', content)
+                for wp_line in wp_lines:
+                    wp_line = wp_line.strip()
+                    if not wp_line:
+                        continue
+                    # Match: name damage (e.g., "匕首 1d4+2" or "拳头 1d3")
+                    wm = re.match(r'(.+?)\s+((?:\d+[dD]\d+(?:[+-]\d+)?)|(?:\d+))\s*$', wp_line)
+                    if wm:
+                        wname = wm.group(1).strip()
+                        wdamage = wm.group(2).strip()
+                        # Guess skill from weapon name
+                        wskill = "格斗(斗殴)"
+                        wname_lower = wname.lower()
+                        if any(kw in wname_lower for kw in ["拳", "爪", "牙", "咬"]):
+                            wskill = "格斗(斗殴)"
+                        elif any(kw in wname_lower for kw in ["刀", "剑", "匕首", "矛", "枪", "棍", "斧", "锤"]):
+                            wskill = wname if wname else "格斗(斗殴)"
+                        elif any(kw in wname_lower for kw in ["弓", "弩", "箭"]):
+                            wskill = "射击"
+                        elif any(kw in wname_lower for kw in ["手枪", "步枪", "霰弹", "冲锋枪"]):
+                            wskill = "射击"
+                        weapons.append({
+                            "name": wname,
+                            "damage": wdamage,
+                            "skill": wskill if wskill else "格斗(斗殴)",
+                        })
+                    else:
+                        # Just a weapon name without damage
+                        weapons.append({
+                            "name": wp_line,
+                            "damage": "1d3",
+                            "skill": "格斗(斗殴)",
+                        })
+
+            elif stype == "background":
+                background_parts.append(content)
+
+        # Build background
+        background_dict: dict[str, str] = {}
+        if background_parts:
+            bg_text = "\n".join(background_parts)
+            # Simple key-value parsing
+            for line in bg_text.split("\n"):
+                if "：" in line or ":" in line:
+                    parts = re.split(r'[：:]', line, maxsplit=1)
+                    if len(parts) == 2:
+                        background_dict[parts[0].strip()] = parts[1].strip()
+                else:
+                    background_dict.setdefault("描述", "")
+                    background_dict["描述"] += line + "\n"
+            background_dict = {k: v.strip() for k, v in background_dict.items() if v.strip()}
+
+        if not skills:
+            skills.append({"name": "闪避", "value": attrs["DEX"] // 2, "half": attrs["DEX"] // 4, "fifth": attrs["DEX"] // 10})
+
+        if not weapons:
+            weapons.append({"name": "拳头", "damage": "1d3", "skill": "拳头/摔跌"})
+
+        # Calculate derived values
+        con, siz = attrs["CON"], attrs["SIZ"]
+        pow_val, dex = attrs["POW"], attrs["DEX"]
+        hp_val = hp_override if hp_override is not None else max(1, (con + siz) // 10)
+        san_val = san_override if san_override is not None else pow_val
+        mp_val = mp_override if mp_override is not None else max(1, pow_val // 5)
+        mov_val = mov_override if mov_override is not None else 7
+        if dex < siz and mov_override is None:
+            mov_val = 7
+        elif dex > siz and mov_override is None:
+            mov_val = 8
+
+        # Build character dict
+        attributes_list = [
+            {"key": k, "label": v, "value": attrs[k], "half": attrs[k] // 2, "fifth": attrs[k] // 5}
+            for k, v in label_map.items()
+        ]
+
+        character = {
+            "basic": {"name": f"{name} (NPC)", "occupation": occupation},
+            "attributes": attributes_list,
+            "status": {"hp": hp_val, "san": san_val, "mp": mp_val, "mov": mov_val, "armor": armor_override},
+            "initialStatus": {"hp": hp_val, "san": san_val, "mp": mp_val, "mov": mov_val, "armor": armor_override},
+            "skills": skills,
+            "weapons": weapons,
+            "background": background_dict,
+            "experiences": [],
+            "spells": [],
+            "warnings": [],
+            "sourceFileName": f"npc-{name}",
+            "isNpc": True,
+        }
+
         return self.add_character(room_id, keeper_id, character, replace_existing=False)
 
     def add_character(self, room_id: str, owner_id: str, character: dict, replace_existing: bool = True) -> dict:
@@ -311,6 +570,23 @@ class RoomStore:
                 self._save()
             return deepcopy(room)
 
+    def delete_character(self, room_id: str, character_id: str, editor_id: str) -> dict:
+        """Delete a specific character by ID. Only KP can delete NPC cards."""
+        with self._lock:
+            room = self._require_room(room_id)
+            editor = self._find_member(room, editor_id)
+            if editor["role"] != "keeper":
+                raise PermissionError("Only keeper can delete characters")
+            characters = room.get("characters", [])
+            idx = next((i for i, c in enumerate(characters) if c.get("id") == character_id), None)
+            if idx is None:
+                raise KeyError("character_not_found")
+            removed = characters.pop(idx)
+            display_name = removed.get("basic", {}).get("name") or removed.get("sourceFileName", "?")
+            self._add_system_message(room, f"{editor['displayName']} 删除了角色卡「{display_name}」。")
+            self._save()
+            return deepcopy(room)
+
     def delete_room(self, room_id: str) -> bool:
         with self._lock:
             if room_id in self._rooms:
@@ -318,6 +594,25 @@ class RoomStore:
                 self._save()
                 return True
             return False
+
+    def delete_message(self, room_id: str, message_id: str, editor_id: str) -> dict | None:
+        """Delete a message. KP can delete any message; sender can delete own message."""
+        with self._lock:
+            room = self._require_room(room_id)
+            editor = self._find_member(room, editor_id)
+            messages = room.get("messages", [])
+            idx = next((i for i, m in enumerate(messages) if m.get("id") == message_id), None)
+            if idx is None:
+                raise KeyError("message_not_found")
+            msg = messages[idx]
+            is_keeper = editor["role"] == "keeper"
+            is_own = msg.get("senderId") == editor_id
+            if not is_keeper and not is_own:
+                raise PermissionError("Only the Keeper or message sender can delete a message")
+            removed = messages.pop(idx)
+            self._add_system_message(room, f"{editor['displayName']} 删除了一条消息。")
+            self._save()
+            return removed
 
     def set_member_online(self, room_id: str, member_id: str, online: bool) -> dict:
         with self._lock:

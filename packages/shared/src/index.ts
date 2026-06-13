@@ -80,6 +80,7 @@ export type CharacterCard = {
   keeperNotes: string;
   lockedFields?: string[];
   active?: boolean;
+  isNpc?: boolean;
   history?: Array<{ editorId: string; editorName: string; timestamp: string; changes: Record<string, unknown>; }>;
   createdAt: string;
   updatedAt: string;

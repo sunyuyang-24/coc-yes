@@ -130,6 +130,20 @@ async def create_npc(room_id: str, name: str = Form("NPC"), keeper_id: str = For
     return {"character": character}
 
 
+@router.post("/rooms/{room_id}/characters/npc/text")
+async def create_npc_from_text(room_id: str, keeper_id: str = Form(..., alias="keeperId"), npc_text: str = Form("", alias="npcText")) -> dict:
+    try:
+        character = store.create_npc_from_text(room_id, keeper_id, npc_text)
+        room = store.get_room(room_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Room or member not found") from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
+    return {"character": character}
+
+
 @router.post("/rooms/{room_id}/characters/upload")
 async def upload_character(room_id: str, owner_id: str = Form(..., alias="ownerId"), file: UploadFile = File(...)) -> dict:
     try:
@@ -244,6 +258,25 @@ async def get_voice_file(room_id: str, filename: str):
     elif filename.endswith(".ogg"):
         media = "audio/ogg"
     return FileResponse(voice_path, media_type=media)
+
+
+# ---------- Message deletion ----------
+
+@router.post("/rooms/{room_id}/messages/{message_id}/delete")
+async def delete_message(room_id: str, message_id: str, editor_id: str = Form(..., alias="editorId")) -> dict:
+    try:
+        store.delete_message(room_id, message_id, editor_id)
+        room = store.get_room(room_id)
+    except KeyError as error:
+        detail = str(error)
+        if detail == "message_not_found":
+            raise HTTPException(status_code=404, detail="Message not found")
+        raise HTTPException(status_code=404, detail="Room or member not found")
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error))
+
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
+    return {"deleted": True}
 
 
 # ---------- File / image upload ----------
@@ -375,6 +408,22 @@ async def remove_room_character(room_id: str, member_id: str = Form(..., alias="
         raise HTTPException(status_code=404, detail="Room or member not found") from None
     await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
     return {"removed": True}
+
+
+@router.post("/rooms/{room_id}/characters/{character_id}/delete")
+async def delete_character(room_id: str, character_id: str, editor_id: str = Form(..., alias="editorId")) -> dict:
+    try:
+        room = store.delete_character(room_id, character_id, editor_id)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error))
+    except KeyError as error:
+        detail = str(error)
+        if detail == "character_not_found":
+            raise HTTPException(status_code=404, detail="Character not found")
+        raise HTTPException(status_code=404, detail="Room or member not found")
+
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
+    return {"deleted": True}
 
 
 @router.get("/rooms/{room_id}/summary")
@@ -729,7 +778,8 @@ async def room_socket(websocket: WebSocket, room_id: str, member_id: str) -> Non
     heartbeat_task = asyncio.create_task(heartbeat())
 
     try:
-        await websocket.send_json({"type": "room_state", "room": room})
+        sanitized = store.get_room_sanitized(room_id, member_id)
+        await websocket.send_json({"type": "room_state", "room": sanitized})
 
         while True:
             raw = await websocket.receive_text()
