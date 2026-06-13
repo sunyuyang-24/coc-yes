@@ -1,19 +1,7 @@
 from __future__ import annotations
 
 from app.modules.characters.xlsx_reader import XlsxReader
-
-
-ATTRIBUTE_LABELS = {
-    "STR": "力量",
-    "DEX": "敏捷",
-    "POW": "意志",
-    "CON": "体质",
-    "APP": "外貌",
-    "EDU": "教育",
-    "SIZ": "体型",
-    "INT": "智力",
-    "Luck": "幸运",
-}
+from app.modules.characters.constants import ATTRIBUTE_LABELS, compute_db_build
 
 ATTRIBUTE_FALLBACK_REFS = {
     "STR": "U3",
@@ -76,7 +64,7 @@ def parse_character_card(content: bytes, filename: str) -> dict:
     # Compute DB/Build from STR+SIZ per COC 7e table
     str_val = next((a["value"] for a in attributes if a["key"] == "STR"), None)
     siz_val = next((a["value"] for a in attributes if a["key"] == "SIZ"), None)
-    db_formula, computed_build = _compute_db_build(str_val, siz_val)
+    db_formula, computed_build = _parse_db_build(str_val, siz_val)
 
     # Store computed DB formula as display text, numeric build for comparison
     if status.get("damageBonus") is None and db_formula is not None:
@@ -136,27 +124,10 @@ def _parse_status(cells: dict[str, str]) -> dict:
     return {key: _number(cells.get(ref)) for key, ref in STATUS_REFS.items()}
 
 
-# COC 7e Damage Bonus / Build table (STR + SIZ)
-# COC 7e Damage Bonus table (CRB p34)
-# STR+SIZ range => (Damage Bonus formula, Build)
-_DB_TABLE = [
-    (64, "-2", -2),
-    (84, "-1", -1),
-    (124, "0", 0),
-    (164, "+1D4", 1),
-    (204, "+1D6", 2),
-    (284, "+2D6", 3),
-    (364, "+3D6", 4),
-]
-
-def _compute_db_build(str_val: int | None, siz_val: int | None) -> tuple[str | None, int | None]:
+def _parse_db_build(str_val: int | None, siz_val: int | None) -> tuple[str | None, int | None]:
     if str_val is None or siz_val is None:
         return None, None
-    total = str_val + siz_val
-    for threshold, formula, build in _DB_TABLE:
-        if total <= threshold:
-            return formula, build
-    return "+4D6", 5  # beyond 364
+    return compute_db_build(str_val, siz_val)
 
 def _parse_skills(cells: dict[str, str]) -> list[dict]:
     skills: list[dict] = []

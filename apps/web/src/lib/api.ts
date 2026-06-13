@@ -22,10 +22,7 @@ export function wsUrl(path: string) {
   return base.toString();
 }
 
-function getAuthToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("coc-yes.auth-token");
-}
+import { getToken } from "./auth";
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -33,7 +30,7 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
     headers.set("Content-Type", "application/json");
   }
 
-  const token = getAuthToken();
+  const token = getToken();
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }

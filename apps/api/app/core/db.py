@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
+
+from app.core.time_utils import now_iso
 
 
 _conn: sqlite3.Connection | None = None
@@ -145,7 +146,7 @@ def _migrate_from_json(json_path: Path) -> None:
                     room.get("roomTheme", "black"),
                     room.get("moduleIntro"),
                     json.dumps(room.get("summary")) if room.get("summary") else None,
-                    room.get("createdAt", _now()),
+                    room.get("createdAt", now_iso()),
                     room.get("endedAt"),
                 ),
             )
@@ -162,7 +163,7 @@ def _migrate_from_json(json_path: Path) -> None:
                         member.get("displayName", ""),
                         member.get("role", "player"),
                         0,  # 迁移时全部离线
-                        member.get("joinedAt", _now()),
+                        member.get("joinedAt", now_iso()),
                     ),
                 )
 
@@ -177,8 +178,8 @@ def _migrate_from_json(json_path: Path) -> None:
                         char.get("ownerId"),
                         char.get("ownerName", ""),
                         json.dumps(char, ensure_ascii=False),
-                        char.get("createdAt", _now()),
-                        char.get("updatedAt", _now()),
+                        char.get("createdAt", now_iso()),
+                        char.get("updatedAt", now_iso()),
                     ),
                 )
 
@@ -201,7 +202,7 @@ def _migrate_from_json(json_path: Path) -> None:
                         msg.get("senderRole", "player"),
                         msg.get("content", ""),
                         json.dumps(extra, ensure_ascii=False) if extra else None,
-                        msg.get("createdAt", _now()),
+                        msg.get("createdAt", now_iso()),
                     ),
                 )
 
@@ -215,7 +216,7 @@ def _migrate_from_json(json_path: Path) -> None:
                         room.get("id", room_id),
                         roll.get("rollerId", ""),
                         json.dumps(roll, ensure_ascii=False),
-                        roll.get("createdAt", _now()),
+                        roll.get("createdAt", now_iso()),
                     ),
                 )
 
@@ -239,6 +240,3 @@ def close_db() -> None:
             _conn.close()
             _conn = None
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()

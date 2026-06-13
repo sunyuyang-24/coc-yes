@@ -5,23 +5,13 @@ from __future__ import annotations
 from copy import deepcopy
 
 
+from app.modules.characters.constants import compute_db_build as _compute_db
+
 class CombatMixin:
     """Combat methods mixed into RoomStore. Expects self to provide:
     _lock, _save(), _require_room(), _find_member(), _find_character(),
-    _add_system_message(), add_dice_roll(), _now().
+    _require_keeper(), _add_system_message(), add_dice_roll(), _now().
     """
-
-    @staticmethod
-    def _compute_db(str_val: int, siz_val: int) -> tuple:
-        total = str_val + siz_val
-        if total <= 64: return ("-2", -2)
-        if total <= 84: return ("-1", -1)
-        if total <= 124: return ("0", 0)
-        if total <= 164: return ("+1D4", 1)
-        if total <= 204: return ("+1D6", 2)
-        if total <= 284: return ("+2D6", 3)
-        if total <= 364: return ("+3D6", 4)
-        return ("+4D6", 5)
 
     @staticmethod
     def _is_impaling_weapon(weapon: dict | None) -> bool:
@@ -62,9 +52,7 @@ class CombatMixin:
     def start_combat(self, room_id: str, editor_id: str) -> dict:
         with self._lock:
             room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can start combat")
+            editor = self._require_keeper(room, editor_id, "start combat")
 
             actors = []
             for member in room["members"]:
@@ -298,9 +286,7 @@ class CombatMixin:
     def end_combat(self, room_id: str, editor_id: str) -> dict:
         with self._lock:
             room = self._require_room(room_id)
-            editor = self._find_member(room, editor_id)
-            if editor["role"] != "keeper":
-                raise PermissionError("Only keeper can end combat")
+            editor = self._require_keeper(room, editor_id, "end combat")
             if "combatState" in room:
                 del room["combatState"]
             self._add_system_message(room, f"{editor['displayName']} 结束了战斗轮次。")
