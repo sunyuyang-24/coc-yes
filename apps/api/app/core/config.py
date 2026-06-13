@@ -16,6 +16,8 @@ class Settings:
     app_name: str = os.getenv("API_APP_NAME", "COC Yes API")
     version: str = os.getenv("API_VERSION", "0.1.0")
     data_dir: Path = Path(os.getenv("API_DATA_DIR", str(REPO_ROOT / "data" / "runtime")))
+    jwt_secret: str = os.getenv("JWT_SECRET", "coc-yes-dev-secret-change-in-production")
+    jwt_expire_days: int = int(os.getenv("JWT_EXPIRE_DAYS", "30"))
     cors_origins: list[str] = None  # type: ignore[assignment]
     admin_key: str = os.getenv("API_ADMIN_KEY", "coc-yes-admin")
 

@@ -18,6 +18,14 @@ class RoomStore:
         self._lock = RLock()
         self._state = self._load()
 
+    def _get_db(self):
+        """Return SQLite connection if initialized, else None (fallback to JSON)."""
+        try:
+            from app.core.db import get_db
+            return get_db()
+        except RuntimeError:
+            return None
+
     def create_room(self, name: str, keeper_name: str, password: str | None = None, theme: str = "black") -> tuple[dict, str]:
         with self._lock:
             room_id = uuid4().hex[:12]
@@ -619,8 +627,8 @@ class RoomStore:
 
     def delete_room(self, room_id: str) -> bool:
         with self._lock:
-            if room_id in self._rooms:
-                del self._rooms[room_id]
+            if room_id in self._state["rooms"]:
+                del self._state["rooms"][room_id]
                 self._save()
                 return True
             return False
@@ -667,9 +675,107 @@ class RoomStore:
         )
 
     def _load(self) -> dict:
+        db = self._get_db()
+        if db is not None:
+            return self._load_from_sqlite(db)
+        return self._load_from_json()
+
+    def _load_from_sqlite(self, db) -> dict:
+        state: dict = {"rooms": {}}
+
+        room_rows = db.execute("SELECT * FROM rooms").fetchall()
+        for rr in room_rows:
+            room_id = rr["id"]
+            room = {
+                "id": room_id,
+                "name": rr["name"],
+                "status": rr["status"],
+                "inviteCode": rr["invite_code"],
+                "password": rr["password"],
+                "roomTheme": rr["room_theme"] or "black",
+                "moduleIntro": rr["module_intro"],
+                "summary": json.loads(rr["summary"]) if rr["summary"] else None,
+                "createdAt": rr["created_at"],
+                "endedAt": rr["ended_at"],
+                "members": [],
+                "messages": [],
+                "rolls": [],
+                "characters": [],
+                "voices": [],
+            }
+
+            # Members
+            mem_rows = db.execute(
+                "SELECT * FROM room_members WHERE room_id = ?", (room_id,)
+            ).fetchall()
+            for mr in mem_rows:
+                room["members"].append({
+                    "id": mr["id"],
+                    "displayName": mr["display_name"],
+                    "role": mr["role"],
+                    "joinedAt": mr["joined_at"],
+                    "online": bool(mr["online"]),
+                    "userId": mr["user_id"],
+                })
+
+            # Messages
+            msg_rows = db.execute(
+                "SELECT * FROM messages WHERE room_id = ? ORDER BY created_at", (room_id,)
+            ).fetchall()
+            for mr in msg_rows:
+                msg = {
+                    "id": mr["id"],
+                    "type": mr["type"],
+                    "roomId": room_id,
+                    "senderId": mr["sender_id"],
+                    "senderName": mr["sender_name"],
+                    "senderRole": mr["sender_role"],
+                    "content": mr["content"],
+                    "createdAt": mr["created_at"],
+                }
+                if mr["data_json"]:
+                    extra = json.loads(mr["data_json"])
+                    msg.update(extra)
+                if msg["type"] == "dice_roll" and "roll" in msg:
+                    room["rolls"].append(msg["roll"])
+                room["messages"].append(msg)
+
+            # Characters
+            char_rows = db.execute(
+                "SELECT * FROM characters WHERE room_id = ?", (room_id,)
+            ).fetchall()
+            for cr in char_rows:
+                char = json.loads(cr["data_json"])
+                char["id"] = cr["id"]
+                char["roomId"] = room_id
+                char["ownerId"] = cr["owner_id"]
+                char["ownerName"] = cr["owner_name"]
+                char["createdAt"] = cr["created_at"]
+                char["updatedAt"] = cr["updated_at"]
+                room["characters"].append(char)
+
+            # Dice rolls (separate from messages - standalone roll records)
+            roll_rows = db.execute(
+                "SELECT * FROM dice_rolls WHERE room_id = ? ORDER BY created_at", (room_id,)
+            ).fetchall()
+            for dr in roll_rows:
+                roll = json.loads(dr["data_json"])
+                roll["id"] = dr["id"]
+                roll["roomId"] = room_id
+                roll["rollerId"] = dr["roller_id"]
+                roll["createdAt"] = dr["created_at"]
+                # Avoid duplicates: rolls might already be in messages
+                existing_ids = {r["id"] for r in room["rolls"]}
+                if roll["id"] not in existing_ids:
+                    room["rolls"].append(roll)
+
+            state["rooms"][room_id] = room
+
+        return state
+
+    def _load_from_json(self) -> dict:
         if not self.path.exists():
             return {"rooms": {}}
-
         try:
             with self.path.open("r", encoding="utf-8") as file:
                 return json.load(file)
@@ -677,12 +783,115 @@ class RoomStore:
             return {"rooms": {}}
 
     def _save(self) -> None:
+        db = self._get_db()
+        if db is not None:
+            self._save_to_sqlite(db)
+        else:
+            self._save_to_json()
+
+    def _save_room_to_sqlite(self, db, room: dict) -> None:
+        room_id = room["id"]
+        # Upsert room row
+        db.execute(
+            """INSERT OR REPLACE INTO rooms
+               (id, name, status, invite_code, password, room_theme,
+                module_intro, summary, created_at, ended_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                room_id,
+                room.get("name", ""),
+                room.get("status", "preparing"),
+                room.get("inviteCode", ""),
+                room.get("password"),
+                room.get("roomTheme", "black"),
+                room.get("moduleIntro"),
+                json.dumps(room.get("summary"), ensure_ascii=False) if room.get("summary") else None,
+                room.get("createdAt", self._now()),
+                room.get("endedAt"),
+            ),
+        )
+
+        # Members: delete and re-insert
+        db.execute("DELETE FROM room_members WHERE room_id = ?", (room_id,))
+        for m in room.get("members", []):
+            db.execute(
+                """INSERT INTO room_members (id, room_id, user_id, display_name, role, online, joined_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    m["id"], room_id,
+                    m.get("userId"),
+                    m["displayName"], m["role"],
+                    int(m.get("online", False)),
+                    m.get("joinedAt", self._now()),
+                ),
+            )
+
+        # Messages: delete and re-insert
+        db.execute("DELETE FROM messages WHERE room_id = ?", (room_id,))
+        for msg in room.get("messages", []):
+            extra = {}
+            for key in ("roll", "replyTo", "attachment", "privateTo", "whisperTo", "mentionIds"):
+                if msg.get(key):
+                    extra[key] = msg[key]
+            db.execute(
+                """INSERT INTO messages (id, room_id, type, sender_id, sender_name, sender_role, content, data_json, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    msg["id"], room_id,
+                    msg.get("type", "text"),
+                    msg.get("senderId"),
+                    msg.get("senderName", ""),
+                    msg.get("senderRole", "player"),
+                    msg.get("content", ""),
+                    json.dumps(extra, ensure_ascii=False) if extra else None,
+                    msg.get("createdAt", self._now()),
+                ),
+            )
+
+        # Characters: delete and re-insert
+        db.execute("DELETE FROM characters WHERE room_id = ?", (room_id,))
+        for char in room.get("characters", []):
+            char_data = {k: v for k, v in char.items()
+                         if k not in ("id", "roomId", "ownerId", "ownerName", "createdAt", "updatedAt")}
+            db.execute(
+                """INSERT INTO characters (id, room_id, owner_id, owner_name, data_json, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    char.get("id", ""), room_id,
+                    char.get("ownerId"),
+                    char.get("ownerName", ""),
+                    json.dumps(char_data, ensure_ascii=False),
+                    char.get("createdAt", self._now()),
+                    char.get("updatedAt", self._now()),
+                ),
+            )
+
+        # Dice rolls: delete and re-insert
+        db.execute("DELETE FROM dice_rolls WHERE room_id = ?", (room_id,))
+        for roll in room.get("rolls", []):
+            roll_data = {k: v for k, v in roll.items()
+                         if k not in ("id", "roomId", "rollerId", "createdAt")}
+            db.execute(
+                """INSERT INTO dice_rolls (id, room_id, roller_id, data_json, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    roll.get("id", ""), room_id,
+                    roll.get("rollerId", ""),
+                    json.dumps(roll_data, ensure_ascii=False),
+                    roll.get("createdAt", self._now()),
+                ),
+            )
+
+    def _save_to_sqlite(self, db) -> None:
+        with db:  # transaction
+            for room in self._state.get("rooms", {}).values():
+                self._save_room_to_sqlite(db, room)
+
+    def _save_to_json(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = self.path.with_suffix(".tmp")
-
         with temp_path.open("w", encoding="utf-8") as file:
             json.dump(self._state, file, ensure_ascii=False, indent=2)
-
         temp_path.replace(self.path)
 
     def _find_by_invite(self, invite_code: str) -> dict:
@@ -1404,6 +1613,44 @@ class RoomStore:
             room = self._require_room(room_id)
             return deepcopy(room.get("voices", []))
 
+    def get_rooms_by_user(self, user_id: str) -> list[dict]:
+        """Return rooms where the given user is a member. Query from SQLite if available, else scan memory."""
+        db = self._get_db()
+        if db is not None:
+            rows = db.execute(
+                "SELECT DISTINCT room_id FROM room_members WHERE user_id = ?", (user_id,)
+            ).fetchall()
+            with self._lock:
+                return [
+                    {"id": r["room_id"], "name": self._state["rooms"].get(r["room_id"], {}).get("name", ""),
+                     "status": self._state["rooms"].get(r["room_id"], {}).get("status", ""),
+                     "createdAt": self._state["rooms"].get(r["room_id"], {}).get("createdAt", ""),
+                     "inviteCode": self._state["rooms"].get(r["room_id"], {}).get("inviteCode", "")}
+                    for r in rows if r["room_id"] in self._state["rooms"]
+                ]
+        with self._lock:
+            result = []
+            for room in self._state.get("rooms", {}).values():
+                for m in room.get("members", []):
+                    if m.get("userId") == user_id:
+                        result.append({
+                            "id": room["id"], "name": room.get("name", ""),
+                            "status": room.get("status", ""),
+                            "createdAt": room.get("createdAt", ""),
+                            "inviteCode": room.get("inviteCode", ""),
+                        })
+                        break
+            return result
+
+    def bind_member_to_user(self, room_id: str, member_id: str, user_id: str) -> dict:
+        """Link a guest member to a registered user account."""
+        with self._lock:
+            room = self._require_room(room_id)
+            member = self._find_member(room, member_id)
+            member["userId"] = user_id
+            self._save()
+            return deepcopy(room)
+
     def cleanup_empty_rooms(self, max_idle_seconds: int = 30) -> int:
         """Remove rooms that have had zero online members for more than max_idle_seconds.
         Returns the number of rooms removed."""
@@ -1449,6 +1696,16 @@ class RoomStore:
                         pass
             if to_remove:
                 self._save()
+                # Also clean up SQLite rows for removed rooms
+                db = self._get_db()
+                if db is not None:
+                    for rid in to_remove:
+                        db.execute("DELETE FROM rooms WHERE id = ?", (rid,))
+                        db.execute("DELETE FROM room_members WHERE room_id = ?", (rid,))
+                        db.execute("DELETE FROM messages WHERE room_id = ?", (rid,))
+                        db.execute("DELETE FROM characters WHERE room_id = ?", (rid,))
+                        db.execute("DELETE FROM dice_rolls WHERE room_id = ?", (rid,))
+                    db.commit()
             return len(to_remove)
 
     def _now(self) -> str:

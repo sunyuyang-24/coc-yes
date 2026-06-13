@@ -22,9 +22,21 @@ export function wsUrl(path: string) {
   return base.toString();
 }
 
+function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("coc-yes.auth-token");
+}
+
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  headers.set("Content-Type", "application/json");
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const token = getAuthToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);

@@ -7,8 +7,11 @@ from fastapi.responses import PlainTextResponse
 from starlette.requests import Request
 from starlette.types import ASGIApp, Scope, Receive, Send
 
+from app.core.auth_middleware import AuthMiddleware
 from app.core.config import settings
+from app.core.db import init_db as init_database, close_db
 from app.core.limiter import limiter
+from app.modules.auth.router import router as auth_router
 from app.modules.bootstrap.router import router as bootstrap_router
 from app.modules.health.router import router as health_router
 from app.modules.rooms.router import router as rooms_router, room_socket, store
@@ -54,9 +57,11 @@ async def _cleanup_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    init_database(settings.data_dir)
     task = asyncio.create_task(_cleanup_loop())
     yield
     task.cancel()
+    close_db()
 
 
 app = FastAPI(
@@ -68,6 +73,7 @@ app = FastAPI(
 )
 
 app.add_middleware(RateLimitMiddleware)
+app.add_middleware(AuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -76,6 +82,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router, prefix="/api", tags=["auth"])
 app.include_router(health_router, prefix="/api", tags=["health"])
 app.include_router(bootstrap_router, prefix="/api", tags=["bootstrap"])
 app.include_router(rooms_router, prefix="/api", tags=["rooms"])
