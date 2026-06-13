@@ -41,7 +41,8 @@ class SendMessageRequest(CamelModel):
     private_to: Optional[str] = Field(default=None, alias="privateTo")
     whisper_to: Optional[str] = Field(default=None, alias="whisperTo")
     mention_ids: Optional[list[str]] = Field(default=None, alias="mentionIds")
-    attachment: Optional[AttachmentRef] = Field(default=None)
+    attachments: Optional[list[AttachmentRef]] = Field(default=None)
+    as_character_id: Optional[str] = Field(default=None, alias="asCharacterId")
 
 
 # ── Structured Skill/Attribute Check ──
@@ -52,6 +53,10 @@ class CheckRequest(CamelModel):
     attribute_key: Optional[str] = Field(default=None, alias="attributeKey")
     difficulty: str = Field(default="regular")
     hidden: bool = Field(default=False)
+    editor_id: Optional[str] = Field(default=None, alias="editorId")
+    opponent_character_id: Optional[str] = Field(default=None, alias="opponentCharacterId")
+    opponent_skill_name: Optional[str] = Field(default=None, alias="opponentSkillName")
+    opponent_attribute_key: Optional[str] = Field(default=None, alias="opponentAttributeKey")
 
 
 class SanCheckRequest(CamelModel):

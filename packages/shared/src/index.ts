@@ -41,6 +41,9 @@ export type DiceRollResult = {
   successLabel: string | null;
   isSuccess: boolean | null;
   hidden: boolean;
+  /** 当 KP 以某角色（NPC 或玩家角色）名义投骰时，保存扮演的角色卡 id */
+  asCharacterId?: string | null;
+  asCharacterName?: string | null;
   characterSAN?: number | null;
   luckState?: { allowed: boolean; newTotal: number | null };
   createdAt: string;
@@ -87,6 +90,7 @@ export type CharacterCard = {
 };
 
 export type AttachmentInfo = {
+  id?: string;
   url: string;
   filename: string;
   size: number;
@@ -101,12 +105,17 @@ export type ChatMessage = {
   senderName: string;
   senderRole: RoomMemberRole | "system";
   content: string;
+  /** 当 KP 以某角色（NPC 或玩家角色）身份发送消息/投骰时，这里记录扮演的角色卡 id */
+  asCharacterId?: string | null;
+  asCharacterName?: string | null;
   roll?: DiceRollResult;
   replyTo?: { id: string; senderName: string; content: string };
   privateTo?: string;
   whisperTo?: string;
   mentionIds?: string[];
+  /** @deprecated 向后兼容——旧的单附件字段。新消息使用 attachments 数组 */
   attachment?: AttachmentInfo;
+  attachments?: AttachmentInfo[];
   createdAt: string;
 };
 
