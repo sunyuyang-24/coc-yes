@@ -40,45 +40,48 @@ export function RoomSetup({
   setNotice, createRoom, joinRoom,
 }: Props) {
   return (
-    <section className="setup-screens" style={{
-      display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "24px",
-      width: "100%", maxWidth: "1080px", margin: "60px auto 40px",
-      padding: "0 24px", boxSizing: "border-box",
+    <div style={{
+      display: "flex", gap: "24px", width: "100%", maxWidth: "1080px",
+      margin: "60px auto 40px", padding: "0 24px", boxSizing: "border-box",
     }}>
-      {/* Column 1: Player / Login */}
-      {isLoggedIn ? (
-        <PlayerCard
-          currentUser={currentUser}
-          myRooms={myRooms}
-          loadingRooms={loadingRooms}
-          setMyRooms={setMyRooms}
-          setLoadingRooms={setLoadingRooms}
-          setIsLoggedIn={setIsLoggedIn}
-          enterRoom={enterRoom}
-          setRoom={setRoom}
-          setMemberId={setMemberId}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Column 1: Player / Login */}
+        {isLoggedIn ? (
+          <PlayerCard
+            currentUser={currentUser}
+            myRooms={myRooms}
+            loadingRooms={loadingRooms}
+            setMyRooms={setMyRooms}
+            setLoadingRooms={setLoadingRooms}
+            setIsLoggedIn={setIsLoggedIn}
+            enterRoom={enterRoom}
+            setRoom={setRoom}
+            setMemberId={setMemberId}
+          />
+        ) : (
+          <LoginCard onAuth={() => setIsLoggedIn(true)} />
+        )}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Column 2: Create Room */}
+        <CreateRoomForm
+          roomName={roomName} setRoomName={setRoomName}
+          keeperName={keeperName} setKeeperName={setKeeperName}
+          roomPassword={roomPassword} setRoomPassword={setRoomPassword}
+          onCreate={createRoom}
         />
-      ) : (
-        <LoginCard onAuth={() => setIsLoggedIn(true)} />
-      )}
-
-      {/* Column 2: Create Room */}
-      <CreateRoomForm
-        roomName={roomName} setRoomName={setRoomName}
-        keeperName={keeperName} setKeeperName={setKeeperName}
-        roomPassword={roomPassword} setRoomPassword={setRoomPassword}
-        onCreate={createRoom}
-      />
-
-      {/* Column 3: Join Room */}
-      <JoinRoomForm
-        inviteCode={inviteCode} setInviteCode={setInviteCode}
-        playerName={playerName} setPlayerName={setPlayerName}
-        joinPassword={joinPassword} setJoinPassword={setJoinPassword}
-        joinAsSpectator={joinAsSpectator} setJoinAsSpectator={setJoinAsSpectator}
-        onJoin={joinRoom}
-      />
-    </section>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Column 3: Join Room */}
+        <JoinRoomForm
+          inviteCode={inviteCode} setInviteCode={setInviteCode}
+          playerName={playerName} setPlayerName={setPlayerName}
+          joinPassword={joinPassword} setJoinPassword={setJoinPassword}
+          joinAsSpectator={joinAsSpectator} setJoinAsSpectator={setJoinAsSpectator}
+          onJoin={joinRoom}
+        />
+      </div>
+    </div>
   );
 }
 
