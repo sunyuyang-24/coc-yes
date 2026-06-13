@@ -23,6 +23,21 @@ from app.modules.rooms.deps import store, manager
 router = APIRouter()
 
 
+def _resolve_target_from_character(character: dict, skill_name: str | None,
+                                    attribute_key: str | None, difficulty: str) -> int:
+    if skill_name:
+        for sk in character.get("skills", []):
+            if sk.get("name") == skill_name:
+                val = int(sk.get("value") or 50)
+                return val if difficulty == "regular" else (val // 2 if difficulty == "hard" else val // 5)
+    if attribute_key:
+        for attr in character.get("attributes", []):
+            if attr.get("key") == attribute_key:
+                val = int(attr.get("value") or 50)
+                return val if difficulty == "regular" else (val // 2 if difficulty == "hard" else val // 5)
+    return 50
+
+
 @router.get("/rooms/mine")
 async def my_rooms(request: Request) -> dict:
     user_id = getattr(request.state, "user_id", None)
@@ -66,7 +81,7 @@ async def join_room(payload: JoinRoomRequest) -> dict:
     except PermissionError as error:
         raise HTTPException(status_code=403, detail=str(error)) from error
 
-    await manager.broadcast(room["id"], {"type": "room_update", "room": room})
+    await manager.broadcast(room["id"], {"type": "room_update", "room": room}, store)
 
     room.pop("password", None)
     return {
@@ -95,28 +110,34 @@ async def send_message(room_id: str, payload: SendMessageRequest) -> dict:
         reply_dict = None
         if payload.reply_to:
             reply_dict = {"id": payload.reply_to.id, "senderName": payload.reply_to.sender_name, "content": payload.reply_to.content}
-        attachment_dict = None
-        if payload.attachment:
-            attachment_dict = {
-                "url": payload.attachment.url,
-                "filename": payload.attachment.filename,
-                "size": payload.attachment.size,
-                "contentType": payload.attachment.content_type,
-            }
+        attachments = None
+        if payload.attachments:
+            attachments = [
+                {
+                    "url": a.url,
+                    "filename": a.filename,
+                    "size": a.size,
+                    "contentType": a.content_type,
+                }
+                for a in payload.attachments
+            ]
         message = store.add_message(
             room_id,
             payload.sender_id,
             payload.content or "",
             reply_to=reply_dict,
-            msg_type=payload.type or (payload.attachment and "attachment") or "text",
+            msg_type=payload.type or (attachments and "attachment") or "text",
             private_to=payload.private_to,
             whisper_to=payload.whisper_to,
             mention_ids=payload.mention_ids,
-            attachment=attachment_dict,
+            attachments=attachments,
+            as_character_id=payload.as_character_id,
         )
         room = store.get_room(room_id)
     except KeyError as error:
-        raise HTTPException(status_code=404, detail="Room or member not found") from error
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
 
     # For private messages, broadcast a sanitized room to non-recipients
     # Currently we broadcast full room; the frontend filters private messages
@@ -135,16 +156,93 @@ async def roll_in_room(room_id: str, payload: RollDiceRequest) -> dict:
             label=payload.label,
             hidden=payload.hidden,
         )
-        roll_record = store.add_dice_roll(room_id, payload.roller_id, roll)
+        roll_record = store.add_dice_roll(room_id, payload.roller_id, roll, as_character_id=payload.as_character_id)
         room = store.get_room(room_id)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except KeyError as error:
-        raise HTTPException(status_code=404, detail="Room or member not found") from error
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
 
     await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
 
     return {"roll": roll_record}
+
+
+# ── 角色卡定向投骰（KP 可扮演任意角色卡，玩家仅限自己） ──
+@router.post("/rooms/{room_id}/rolls/character")
+async def roll_with_character(
+    room_id: str,
+    payload: CheckRequest,
+    *,
+    expression: str = "1d100",
+    bonus_penalty: int = 0,
+) -> dict:
+    try:
+        roll_record = store.character_roll(
+            room_id,
+            payload.editor_id or payload.character_id,
+            payload.character_id,
+            expression=expression or "1d100",
+            skill_name=payload.skill_name,
+            attribute_key=payload.attribute_key,
+            difficulty=payload.difficulty or "regular",
+            bonus_penalty=bonus_penalty,
+            hidden=payload.hidden,
+        )
+        room = store.get_room(room_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+
+    await manager.broadcast(room_id, {"type": "room_update", "room": room}, store)
+    return {"roll": roll_record}
+
+
+# ── 对抗检定（KP 用 NPC / 玩家用自己角色卡） ──
+@router.post("/rooms/{room_id}/coc/opposed")
+async def opposed_roll(room_id: str, payload: CheckRequest) -> dict:
+    try:
+        room = store._require_room(room_id)
+        actor = store._find_member(room, payload.editor_id or payload.character_id)
+        actor_char = store._find_character(room, payload.character_id)
+        actor_target = _resolve_target_from_character(
+            actor_char, payload.skill_name, payload.attribute_key, payload.difficulty
+        )
+        actor_roll = roll_dice("1d100", target_value=actor_target, hidden=payload.hidden,
+                               label=f"{actor_char.get('basic', {}).get('name', '??')} | {payload.skill_name or payload.attribute_key or '检定'}")
+
+        opponent_character_id = getattr(payload, "opponent_character_id", None)
+        opponent_roll = None
+        opponent_target: int | None = None
+        if opponent_character_id:
+            opponent_char = store._find_character(room, opponent_character_id)
+            opponent_target = _resolve_target_from_character(
+                opponent_char, getattr(payload, "opponent_skill_name", None),
+                getattr(payload, "opponent_attribute_key", None), "regular"
+            )
+            opponent_roll = roll_dice("1d100", target_value=opponent_target, hidden=payload.hidden,
+                                      label=f"{opponent_char.get('basic', {}).get('name', '??')} | 对抗")
+            # 记录第二颗骰子
+            store.add_dice_roll(room_id, actor["id"], opponent_roll, as_character_id=opponent_character_id)
+
+        # 主投骰（actor）——记录到聊天
+        roll_record = store.add_dice_roll(room_id, actor["id"], actor_roll, as_character_id=payload.character_id)
+        room_snapshot = store.get_room(room_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+
+    await manager.broadcast(room_id, {"type": "room_update", "room": room_snapshot}, store)
+    return {
+        "actorRoll": roll_record,
+        "opponentRoll": opponent_roll,
+    }
 
 
 @router.post("/rooms/{room_id}/characters/npc")
@@ -319,38 +417,39 @@ ALLOWED_MIMETYPES = {
 @router.post("/rooms/{room_id}/files")
 async def upload_file(
     room_id: str,
-    sender_id: str = Form(..., alias="senderId"),
-    file: UploadFile = File(...),
-) -> dict:
-    max_size = 10 * 1024 * 1024  # 10 MB
-    if file.size is not None and file.size > max_size:
-        raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
-    content = await file.read()
-    if len(content) == 0:
-        raise HTTPException(status_code=400, detail="Empty file")
-    if len(content) > max_size:
-        raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
-
-    fname = file.filename or "file"
-    ext = ""
-    if "." in fname:
-        ext = "." + fname.rsplit(".", 1)[1].lower()
-    if ext not in ALLOWED_EXTENSIONS and file.content_type not in ALLOWED_MIMETYPES:
-        raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext or file.content_type}")
-
+    sender_id: str = Form("", alias="senderId"),
+    files: list[UploadFile] = File(...),
+) -> list[dict]:
+    max_size = 10 * 1024 * 1024  # 10 MB per file
     upload_dir = settings.data_dir / "uploads" / room_id
     upload_dir.mkdir(parents=True, exist_ok=True)
-    file_id = uuid4().hex
-    file_path = upload_dir / f"{file_id}{ext}"
-    file_path.write_bytes(content)
 
-    url = f"/api/rooms/{room_id}/files/{file_id}{ext}"
-    return {
-        "url": url,
-        "filename": fname,
-        "size": len(content),
-        "contentType": file.content_type or "application/octet-stream",
-    }
+    results: list[dict] = []
+    for file in files:
+        content = await file.read()
+        if len(content) == 0:
+            continue
+        if len(content) > max_size:
+            raise HTTPException(status_code=400, detail=f"File too large (max 10 MB): {file.filename or ''}")
+
+        fname = file.filename or "file"
+        ext = ""
+        if "." in fname:
+            ext = "." + fname.rsplit(".", 1)[1].lower()
+        file_id = uuid4().hex
+        out_path = upload_dir / f"{file_id}{ext}"
+        out_path.write_bytes(content)
+
+        url = f"/api/rooms/{room_id}/files/{file_id}{ext}"
+        results.append({
+            "id": file_id,
+            "url": url,
+            "filename": fname,
+            "size": len(content),
+            "contentType": file.content_type or "application/octet-stream",
+        })
+
+    return results
 
 
 @router.get("/rooms/{room_id}/files/{filename:path}")

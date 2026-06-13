@@ -1,7 +1,7 @@
 "use client";
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CharacterCard, DiceRollResult, RoomDetail } from "@coc-yes/shared";
+import type { CharacterCard, DiceRollResult, RoomDetail, UserInfo } from "@coc-yes/shared";
 import { CharacterCardView } from "@/components/character-card-view";
 import { RulesSearchPanel } from "@/components/rules-search-panel";
 import { VoiceRecorder } from "@/components/voice-recorder";
@@ -45,8 +45,10 @@ function findMemberChar(memberId: string, chars: CharacterCard[] | undefined): C
 }
 
 export function RoomConsole() {
-  const [isLoggedIn, setIsLoggedIn] = useState(() => getToken() != null);
-  const currentUser = useState(() => getUser())[0];
+  // 注意：这些初始化必须与 SSR 时的渲染结果一致，避免 hydration mismatch。
+  // 依赖 localStorage / window 的真实值放在下面的 useEffect 中同步。
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState<UserInfo | null>(null);
   const [room, setRoom] = useState<RoomDetail | null>(null);
   const [memberId, setMemberId] = useState<string | null>(null);
   const [myRooms, setMyRooms] = useState<Array<{id:string;name:string;status:string;createdAt:string;inviteCode:string}>>([]);
@@ -57,8 +59,7 @@ export function RoomConsole() {
   const [inviteCode, setInviteCode] = useState(""); const [playerName, setPlayerName] = useState("");
   const [draft, setDraft] = useState(""); const [rollLabel, setRollLabel] = useState("");
   const [expression, setExpression] = useState("1d100");
-  const [targetValue, setTargetValue] = useState(() => { try { const raw = window.localStorage.getItem(DICE_PREFS_KEY);
-    if (raw) { const prefs = JSON.parse(raw); return String(prefs.targetValue ?? 60); } } catch { /* ignore */ } return "60"; });
+  const [targetValue, setTargetValue] = useState("60");
   const [bonusPenalty, setBonusPenalty] = useState("0"); const [hiddenRoll, setHiddenRoll] = useState(false);
   const [replyTo, setReplyTo] = useState<{ id: string; senderName: string; content: string } | null>(null);
   const [privateTarget, setPrivateTarget] = useState(""); const [npcName, setNpcName] = useState("");
@@ -66,6 +67,19 @@ export function RoomConsole() {
   const [messageSearch, setMessageSearch] = useState("");
   const [characterFile, setCharacterFile] = useState<File | null>(null); const [notice, setNotice] = useState("");
   useEffect(() => { if (!notice) return; const id = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(id); }, [notice]);
+  // Client-only hydration：在 useEffect（只在浏览器运行）里同步 localStorage 相关的初始值
+  useEffect(() => {
+    try {
+      setIsLoggedIn(getToken() != null);
+      const user = getUser();
+      if (user) setCurrentUser(user);
+      const dicePrefs = window.localStorage.getItem(DICE_PREFS_KEY);
+      if (dicePrefs) {
+        const prefs = JSON.parse(dicePrefs);
+        if (prefs?.targetValue != null) setTargetValue(String(prefs.targetValue));
+      }
+    } catch { /* ignore storage errors */ }
+  }, []);
   const [wsStatus, setWsStatus] = useState<"connecting" | "connected" | "disconnected">("disconnected");
   const [showRulesPanel, setShowRulesPanel] = useState(false);
   const [showSummaryPanel, setShowSummaryPanel] = useState(false);
@@ -84,7 +98,8 @@ export function RoomConsole() {
   const [showNpcPanel, setShowNpcPanel] = useState(false);
   const [showNpcList, setShowNpcList] = useState(false);
   const [kpCheckCharId, setKpCheckCharId] = useState("");
-  const [attachment, setAttachment] = useState<{ url: string; filename: string; size: number; contentType: string } | null>(null);
+  const [asCharacterId, setAsCharacterId] = useState<string>(""); // KP 扮演身份
+  const [attachments, setAttachments] = useState<Array<{ id: string; url: string; filename: string; size: number; contentType: string }>>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [viewingFile, setViewingFile] = useState<{ url: string; filename: string; contentType: string } | null>(null);
@@ -145,34 +160,46 @@ export function RoomConsole() {
           role: joinAsSpectator ? "spectator" : "player" }) });
       enterRoom(response.room, response.currentMemberId);
     } catch (err) { setNotice("加入房间失败，请检查网络连接"); } }
-  async function uploadFile(file: File) {
-    if (!room || !memberId) return;
+  async function uploadFiles(files: File[]): Promise<Array<{ id: string; url: string; filename: string; size: number; contentType: string }>> {
+    if (!room || !memberId || files.length === 0) return [];
     setUploading(true);
     try {
       const form = new FormData();
       form.append("senderId", memberId);
-      form.append("file", file);
+      for (const f of files) form.append("files", f);
       const res = await fetch(apiUrl(`/api/rooms/${room.id}/files`), { method: "POST", body: form });
-      if (!res.ok) { const err = await res.text(); alert(`上传失败: ${err}`); return null; }
-      return await res.json() as { url: string; filename: string; size: number; contentType: string };
-    } catch (err) { alert(`上传出错: ${err instanceof Error ? err.message : "网络错误"}`); return null; }
-    finally { setUploading(false); }
+      if (!res.ok) {
+        const errText = await res.text();
+        alert(`上传失败: ${errText}`);
+        return [];
+      }
+      return (await res.json()) as Array<{ id: string; url: string; filename: string; size: number; contentType: string }>;
+    } catch (err) {
+      alert(`上传出错: ${err instanceof Error ? err.message : "网络错误"}`);
+      return [];
+    } finally {
+      setUploading(false);
+    }
   }
   async function sendMessage(event: FormEvent<HTMLFormElement>) { event.preventDefault();
     if (!room || !memberId) return;
-    if (!draft.trim() && !attachment) return;
+    if (!draft.trim() && attachments.length === 0) return;
     const content = draft.trim(); setDraft("");
     try { await apiRequest(`/api/rooms/${room.id}/messages`, { method: "POST",
       body: JSON.stringify({ senderId: memberId, content, replyTo,
-        privateTo: privateTarget || undefined, attachment: attachment || undefined }) });
-      setReplyTo(null); setAttachment(null); }
+        privateTo: privateTarget || undefined,
+        attachments: attachments.length ? attachments : undefined,
+        asCharacterId: (isKeeper && asCharacterId) || undefined }) });
+      setReplyTo(null); setAttachments([]); }
     catch { setNotice("发送失败，请检查网络连接"); } }
   async function rollDice(event?: FormEvent<HTMLFormElement>) { if (event) event.preventDefault();
     if (!room || !memberId) return; const parsed = Number(targetValue);
     const tv: number | null = Number.isFinite(parsed) ? parsed : null;
     try { await apiRequest(`/api/rooms/${room.id}/rolls`, { method: "POST",
       body: JSON.stringify({ rollerId: memberId, expression, label: rollLabel || null, targetValue: tv,
-        bonusPenalty: Number(bonusPenalty), hidden: hiddenRoll && currentMember?.role === "keeper" }) });
+        bonusPenalty: Number(bonusPenalty),
+        hidden: hiddenRoll && currentMember?.role === "keeper",
+        asCharacterId: (isKeeper && asCharacterId) || undefined }) });
     try { window.localStorage.setItem(DICE_PREFS_KEY, JSON.stringify({ targetValue: tv ?? 60, expression,
       bonusPenalty: Number(bonusPenalty) })); } catch { /* ignore */ } if (loadSettings().diceSound !== false) playDiceSound(); }
     catch { setNotice("投骰失败，请检查网络连接"); } }
@@ -594,6 +621,8 @@ export function RoomConsole() {
                 const isSystem = message.type === "system"; const isDice = message.type === "dice_roll";
                 const isHidden = message.roll?.hidden; const isPrivate = message.type === "private";
                 const isVoice = message.type === "voice"; const isKeeperMsg = message.senderRole === "keeper";
+                const asChar = message.asCharacterName;
+                const senderLabel = asChar ? asChar : message.senderName;
                 const bubbleClass = isSystem ? "chat-bubble--system" : isHidden ? "chat-bubble--hidden" :
                   isDice ? "chat-bubble--dice" : isPrivate ? "chat-bubble--private" :
                   isVoice ? "chat-bubble--voice" : "chat-bubble--text";
@@ -602,7 +631,7 @@ export function RoomConsole() {
                     {!isSystem && (
                       <div className="chat-bubble__header">
                         <span className={`chat-bubble__sender ${isKeeperMsg ? "chat-bubble__sender--kp" : "chat-bubble__sender--player"}`}>
-                          {message.senderName}
+                          {asChar ? `🎭 ${senderLabel}` : senderLabel}
                         </span>
                         {isHidden && <span style={{ fontSize: "10px", color: "var(--error)" }}>暗投</span>}
                         {isPrivate && <span style={{ fontSize: "10px", color: "#7C6FF7" }}>私密</span>}
@@ -637,20 +666,30 @@ export function RoomConsole() {
                         )}
                       </>
                     )}
-                    {(message as any).attachment && (
-                      <div className="chat-bubble__attachment"
-                        onClick={() => setViewingFile((message as any).attachment)}
-                        style={{ cursor: "pointer" }}>
-                        {(message as any).attachment.contentType?.startsWith("image/") ? (
-                          <img src={(message as any).attachment.url} alt={(message as any).attachment.filename}
-                            className="chat-bubble__attachment-img" />
-                        ) : (
-                          <span className="chat-bubble__attachment-file">
-                            📎 {(message as any).attachment.filename} ({((message as any).attachment.size / 1024).toFixed(0)} KB)
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    {(() => {
+                      // 合并新 attachments 数组 + 旧 attachment 单对象，兼容历史消息
+                      const list: Array<{ id?: string; url: string; filename: string; size: number; contentType: string }> = [];
+                      if ((message as any).attachments && Array.isArray((message as any).attachments)) list.push(...(message as any).attachments);
+                      if ((message as any).attachment) list.push((message as any).attachment);
+                      if (list.length === 0) return null;
+                      return (
+                        <div className="chat-bubble__attachments" style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                          {list.map((a, idx) => (
+                            <div key={a.id || `${a.url}-${idx}`} className="chat-bubble__attachment"
+                              onClick={() => setViewingFile(a)}
+                              style={{ cursor: "pointer" }}>
+                              {a.contentType?.startsWith("image/") ? (
+                                <img src={a.url} alt={a.filename} className="chat-bubble__attachment-img" />
+                              ) : (
+                                <span className="chat-bubble__attachment-file">
+                                  📎 {a.filename} ({(a.size / 1024).toFixed(0)} KB)
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </article>
                 );
               })
@@ -828,52 +867,93 @@ export function RoomConsole() {
 
           {/* Composer Bar */}
           <form className={`composer-bar${dragOver ? " composer-bar--drag" : ""}`} onSubmit={sendMessage}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (!uploading) setDragOver(true);
+            }}
             onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
             onDrop={async (e) => {
               e.preventDefault(); setDragOver(false);
-              const file = e.dataTransfer.files?.[0];
-              if (!file) return;
-              const result = await uploadFile(file);
-              if (result) setAttachment(result);
+              if (uploading) return;
+              const files: File[] = [];
+              if (e.dataTransfer.files && e.dataTransfer.files.length) {
+                for (let i = 0; i < e.dataTransfer.files.length; i++) files.push(e.dataTransfer.files[i]);
+              }
+              if (files.length === 0) return;
+              const results = await uploadFiles(files);
+              if (results.length > 0) setAttachments((prev) => [...prev, ...results]);
             }}>
             <div className="composer-bar__body">
+              {isKeeper && room.characters && room.characters.length > 0 && (
+                <div className="composer-bar__row"
+                  style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px", fontSize: "13px", color: "var(--text-secondary)" }}>
+                  <label style={{ whiteSpace: "nowrap" }}>扮演身份:</label>
+                  <select
+                    value={asCharacterId}
+                    onChange={(e) => setAsCharacterId(e.target.value)}
+                    style={{ background: "var(--bg-surface)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: "4px", padding: "3px 8px", flex: "1 1 auto", maxWidth: "320px" }}
+                  >
+                    <option value="">以我自己 ({currentMember?.displayName ?? "KP"})</option>
+                    {room.characters.map((c) => {
+                      const displayName = c.basic?.name || c.sourceFileName || `角色卡-${c.id.slice(0, 6)}`;
+                      const isNpc = !!(c.isNpc || (c.sourceFileName || "").startsWith("npc"));
+                      return (
+                        <option key={c.id} value={c.id}>
+                          {isNpc ? "🎭 NPC" : "👤 "} {displayName} {isNpc ? "" : `(${room.members.find((m) => m.id === c.ownerId)?.displayName || "?"})`}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
               {replyTo && (
                 <div className="composer-bar__reply">
                   回复 {replyTo.senderName}: {replyTo.content.slice(0, 40)}
                   <button type="button" onClick={() => setReplyTo(null)}>✕</button>
                 </div>
               )}
-              {attachment && (
-                <div className="composer-bar__attachment">
-                  {attachment.contentType.startsWith("image/") ? (
-                    <img src={attachment.url} alt={attachment.filename} className="composer-bar__attachment-img" />
-                  ) : (
-                    <span className="composer-bar__attachment-file">📎 {attachment.filename} ({(attachment.size / 1024).toFixed(0)} KB)</span>
-                  )}
-                  <button type="button" onClick={() => setAttachment(null)}
-                    className="composer-bar__attachment-remove" title="移除附件">✕</button>
+              {attachments.length > 0 && (
+                <div className="composer-bar__attachments" style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  {attachments.map((a) => (
+                    <div key={a.id} className="composer-bar__attachment">
+                      {a.contentType.startsWith("image/") ? (
+                        <img src={a.url} alt={a.filename} className="composer-bar__attachment-img" />
+                      ) : (
+                        <span className="composer-bar__attachment-file">📎 {a.filename} ({(a.size / 1024).toFixed(0)} KB)</span>
+                      )}
+                      <button type="button" onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}
+                        className="composer-bar__attachment-remove" title="移除此附件">✕</button>
+                    </div>
+                  ))}
                 </div>
               )}
               <textarea className={`composer-bar__input${dragOver ? " composer-bar__input--drag" : ""}`}
                 value={draft} onChange={(e) => setDraft(e.target.value)}
-                placeholder={uploading ? "上传中..." : dragOver ? "松开以上传文件" : "输入消息... 也可拖拽文件到这里"}
+                placeholder={uploading ? "上传中..." : dragOver ? "松开以上传文件" : attachments.length ? `输入消息（已附加 ${attachments.length} 个文件，可点击文件右上角 ✕ 移除）` : "输入消息... 也可拖拽多个文件到这里"}
                 rows={8}
               />
             </div>
             <div className="composer-bar__actions">
-              <button type="button" className="composer-bar__icon-btn"
-                onClick={() => document.getElementById("composer-file-input")?.click()}
-                title="上传文件">
+              <button type="button" className={`composer-bar__icon-btn${uploading ? " composer-bar__icon-btn--disabled" : ""}`}
+                onClick={() => {
+                  if (uploading) return;
+                  document.getElementById("composer-file-input")?.click();
+                }}
+                title={uploading ? "上传中..." : attachments.length ? `已选择 ${attachments.length} 个附件；再次点击可继续添加` : "上传文件（支持多文件）"}>
                 📎
               </button>
-              <input type="file" id="composer-file-input" style={{ display: "none" }}
+              <input type="file" id="composer-file-input" style={{ display: "none" }} multiple
                 accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.txt,.md,.json,.csv"
+                onClick={(e) => {
+                  if (uploading) e.preventDefault();
+                }}
                 onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  const result = await uploadFile(file);
-                  if (result) setAttachment(result);
+                  const files: File[] = [];
+                  if (e.target.files) for (let i = 0; i < e.target.files.length; i++) files.push(e.target.files[i]);
+                  if (files.length === 0) return;
+                  if (uploading) return;
+                  const results = await uploadFiles(files);
+                  if (results.length > 0) setAttachments((prev) => [...prev, ...results]);
                   e.target.value = "";
                 }} />
               <div className="voice-mode-toggle">

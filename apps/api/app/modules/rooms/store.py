@@ -120,14 +120,24 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
             return deepcopy(room)
 
     def get_room_sanitized(self, room_id: str, member_id: str) -> dict:
-        """返回对指定成员过滤后的房间数据。非 KP 成员看不到暗骰和私密消息。"""
+        """返回对指定成员过滤后的房间数据。非 KP 成员看不到暗骰和私密消息。
+        未知 member_id（空字符串或不在成员列表中）视为非 KP 旁观者。
+        """
         with self._lock:
             room = deepcopy(self._require_room(room_id))
-        member = self._find_member(room, member_id)
-        is_keeper = member["role"] == "keeper"
 
         # 永远不暴露房间密码
         room.pop("password", None)
+
+        # 查找成员；未知或空的 member_id 视为非 KP 旁观者
+        is_keeper = False
+        if member_id:
+            member = next(
+                (m for m in room.get("members", []) if m.get("id") == member_id),
+                None,
+            )
+            if member is not None:
+                is_keeper = member.get("role") == "keeper"
 
         if not is_keeper:
             # 完全移除暗骰消息
@@ -142,7 +152,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                 if not r.get("hidden")
             ]
 
-        # 过滤聊天消息中的私密消息
+        # 过滤聊天消息中的私密消息：非 KP 只能看到自己发送或被指定的
         room["messages"] = [
             m for m in room.get("messages", [])
             if not m.get("privateTo") or m.get("privateTo") == member_id or m.get("senderId") == member_id or is_keeper
@@ -150,10 +160,23 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
 
         return room
 
-    def add_message(self, room_id: str, sender_id: str | None, content: str, reply_to: dict | None = None, msg_type: str = "text", private_to: str | None = None, whisper_to: str | None = None, mention_ids: list[str] | None = None, attachment: dict | None = None) -> dict:
+    def add_message(self, room_id: str, sender_id: str | None, content: str, reply_to: dict | None = None, msg_type: str = "text", private_to: str | None = None, whisper_to: str | None = None, mention_ids: list[str] | None = None, attachments: list[dict] | None = None, as_character_id: str | None = None) -> dict:
         with self._lock:
             room = self._require_room(room_id)
-            if sender_id:
+            as_character_name: str | None = None
+            sender_name: str
+            sender_role: str
+            if as_character_id:
+                character = self._find_character(room, as_character_id)
+                as_character_name = (character.get("basic", {}) or {}).get("name") or character.get("sourceFileName") or "NPC"
+                # 仍以发送者本人记录 senderId / senderRole（便于权限判断与溯源），但显示名称用角色名
+                sender_name = as_character_name
+                if sender_id:
+                    sender = next((m for m in room.get("members", []) if m["id"] == sender_id), None)
+                    sender_role = sender["role"] if sender else "keeper"
+                else:
+                    sender_role = "keeper"
+            elif sender_id:
                 sender = self._find_member(room, sender_id)
                 sender_name = sender["displayName"]
                 sender_role = sender["role"]
@@ -170,6 +193,9 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                 "content": content,
                 "createdAt": self._now(),
             }
+            if as_character_id:
+                message["asCharacterId"] = as_character_id
+                message["asCharacterName"] = as_character_name
             if reply_to:
                 message["replyTo"] = reply_to
             if private_to:
@@ -178,42 +204,95 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                 message["whisperTo"] = whisper_to
             if mention_ids:
                 message["mentionIds"] = mention_ids
-            if attachment:
-                message["attachment"] = attachment
+            if attachments:
+                message["attachments"] = attachments
             room["messages"].append(message)
             self._save()
             return deepcopy(message)
 
-    def add_dice_roll(self, room_id: str, roller_id: str, roll: dict) -> dict:
+    def add_dice_roll(self, room_id: str, roller_id: str, roll: dict, as_character_id: str | None = None) -> dict:
         with self._lock:
             room = self._require_room(room_id)
             roller = self._find_member(room, roller_id)
+            as_character_name: str | None = None
+            roller_name = roller["displayName"]
+            if as_character_id:
+                character = self._find_character(room, as_character_id)
+                as_character_name = (character.get("basic", {}) or {}).get("name") or character.get("sourceFileName") or "NPC"
+                roller_name = as_character_name
             roll_record = {
                 **roll,
                 "id": uuid4().hex,
                 "roomId": room_id,
                 "rollerId": roller_id,
-                "rollerName": roller["displayName"],
+                "rollerName": roller_name,
                 "rollerRole": roller["role"],
                 "createdAt": self._now(),
             }
+            if as_character_id:
+                roll_record["asCharacterId"] = as_character_id
+                roll_record["asCharacterName"] = as_character_name
             message = {
                 "id": uuid4().hex,
                 "type": "dice_roll",
                 "roomId": room_id,
                 "senderId": roller_id,
-                "senderName": roller["displayName"],
+                "senderName": roller_name,
                 "senderRole": roller["role"],
                 "content": self._format_roll_message(roll_record),
                 "roll": roll_record,
                 "createdAt": roll_record["createdAt"],
             }
+            if as_character_id:
+                message["asCharacterId"] = as_character_id
+                message["asCharacterName"] = as_character_name
 
             room.setdefault("rolls", []).append(roll_record)
             room["messages"].append(message)
             self._save()
 
             return deepcopy(roll_record)
+
+    def character_roll(self, room_id: str, roller_id: str, character_id: str,
+                       expression: str = "1d100", *, skill_name: str | None = None,
+                       attribute_key: str | None = None, difficulty: str = "regular",
+                       bonus_penalty: int = 0, hidden: bool = False,
+                       label: str | None = None) -> dict:
+        """按角色卡属性/技能值投骰。KP 可以传入任意角色卡 id（包括 NPC）；
+        普通成员只能用自己绑定的角色卡。"""
+        from app.modules.dice.roller import roll_dice
+
+        with self._lock:
+            room = self._require_room(room_id)
+            roller = self._find_member(room, roller_id)
+            character = self._find_character(room, character_id)
+            if roller["role"] != "keeper":
+                if character.get("ownerId") != roller_id:
+                    raise PermissionError("You can only roll with your own character card")
+
+            target_value: int | None = None
+            resolved_label: str = label or ""
+            if skill_name:
+                for sk in character.get("skills", []):
+                    if sk.get("name") == skill_name:
+                        val = sk.get("value") or 50
+                        target_value = val if difficulty == "regular" else (val // 2 if difficulty == "hard" else val // 5)
+                        resolved_label = f"{character.get('basic', {}).get('name', '??')} | {skill_name}"
+                        break
+            if target_value is None and attribute_key:
+                for attr in character.get("attributes", []):
+                    if attr.get("key") == attribute_key:
+                        val = attr.get("value") or 50
+                        target_value = val if difficulty == "regular" else (val // 2 if difficulty == "hard" else val // 5)
+                        resolved_label = f"{character.get('basic', {}).get('name', '??')} | {attr.get('label', attribute_key)}"
+                        break
+            if target_value is None and not label:
+                resolved_label = f"{character.get('basic', {}).get('name', '??')}"
+
+            roll = roll_dice(expression, target_value=target_value,
+                             bonus_penalty=bonus_penalty,
+                             label=resolved_label, hidden=hidden)
+            return self.add_dice_roll(room_id, roller_id, roll, as_character_id=character_id)
 
     def add_character(self, room_id: str, owner_id: str, character: dict, replace_existing: bool = True) -> dict:
         with self._lock:
@@ -547,7 +626,7 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
         db.execute("DELETE FROM messages WHERE room_id = ?", (room_id,))
         for msg in room.get("messages", []):
             extra = {}
-            for key in ("roll", "replyTo", "attachment", "privateTo", "whisperTo", "mentionIds"):
+            for key in ("roll", "replyTo", "attachment", "attachments", "privateTo", "whisperTo", "mentionIds"):
                 if msg.get(key):
                     extra[key] = msg[key]
             db.execute(

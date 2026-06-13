@@ -36,13 +36,24 @@ class RoomConnectionManager:
                 data = payload
                 if store and payload.get("type") == "room_update" and "room" in payload:
                     member_id = self._member_map.get(websocket, "")
-                    if member_id:
-                        try:
-                            sanitized = store.get_room_sanitized(payload["room"]["id"], member_id)
-                            data = {"type": "room_update", "room": sanitized}
-                        except Exception:
-                            logger.exception("Failed to sanitize room data for broadcast; skipping this client")
-                            continue
+                    # 始终脱敏：无论 member_id 是否有效，都调用 get_room_sanitized
+                    # 未知 member_id 会被视为非 KP 的旁观者
+                    try:
+                        sanitized = store.get_room_sanitized(room_id, member_id)
+                        data = {"type": "room_update", "room": sanitized}
+                    except Exception:
+                        logger.exception("Failed to sanitize room data for broadcast; falling back to sanitized empty room")
+                        # 降级：从 payload 中剥离敏感字段，只保留安全字段
+                        safe_room = {
+                            "id": payload["room"].get("id"),
+                            "name": payload["room"].get("name"),
+                            "status": payload["room"].get("status"),
+                            "members": payload["room"].get("members", []),
+                            "messages": [],
+                            "rolls": [],
+                            "createdAt": payload["room"].get("createdAt"),
+                        }
+                        data = {"type": "room_update", "room": safe_room}
                 await websocket.send_json(data)
             except (WebSocketDisconnect, RuntimeError):
                 stale.append(websocket)
