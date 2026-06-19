@@ -37,8 +37,6 @@ type UserChar = {
   updated_at: string;
 };
 
-type PendingAction = { roomId: string; action: "leave" | "delete" } | null;
-
 export default function AdminPage() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,7 +51,7 @@ export default function AdminPage() {
   const [userChars, setUserChars] = useState<UserChar[]>([]);
   const [loadingDetail, setLoadingDetail] = useState<"rooms" | "chars" | null>(null);
   const [activeTab, setActiveTab] = useState<"rooms" | "chars">("rooms");
-  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [deletingRoomId, setDeletingRoomId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ roomId: string; roomName: string } | null>(null);
   const [charDetail, setCharDetail] = useState<CharacterCard | null>(null);
   const [charDetailLoading, setCharDetailLoading] = useState(false);
@@ -148,22 +146,6 @@ export default function AdminPage() {
     );
   }
 
-  async function handleLeave(roomId: string) {
-    if (!selectedUser) return;
-    setActionError("");
-    setPendingAction({ roomId, action: "leave" });
-    try {
-      await apiRequest(
-        `/api/admin/users/${selectedUser.id}/rooms/${roomId}/leave`,
-        { method: "POST" }
-      );
-      removeRoomFromState(roomId);
-    } catch {
-      setActionError("离开房间失败，请重试");
-    }
-    setPendingAction(null);
-  }
-
   function handleDeleteRoom(roomId: string, roomName: string) {
     setDeleteConfirm({ roomId, roomName });
   }
@@ -173,14 +155,14 @@ export default function AdminPage() {
     const roomId = deleteConfirm.roomId;
     setDeleteConfirm(null);
     setActionError("");
-    setPendingAction({ roomId, action: "delete" });
+    setDeletingRoomId(roomId);
     try {
       await apiRequest(`/api/admin/rooms/${roomId}/delete`, { method: "POST" });
       removeRoomFromState(roomId);
     } catch {
       setActionError("删除房间失败，请检查权限或稍后重试");
     }
-    setPendingAction(null);
+    setDeletingRoomId(null);
   }
 
   async function handleViewChar(charId: string) {
@@ -258,9 +240,6 @@ export default function AdminPage() {
       </div>
     );
   }
-
-  const isActionPending = (roomId: string) =>
-    pendingAction?.roomId === roomId ? pendingAction.action : null;
 
   return (
     <div style={{ maxWidth: "1080px", margin: "40px auto", padding: "0 24px" }}>
@@ -461,20 +440,11 @@ export default function AdminPage() {
                           <button
                             className="button button--ghost button--sm"
                             onClick={() => handleDeleteRoom(r.room_id, r.room_name)}
-                            disabled={pendingAction !== null}
+                            disabled={deletingRoomId === r.room_id}
                             type="button"
                             style={{ flexShrink: 0, marginLeft: "12px", color: "var(--danger)" }}
                           >
-                            {isActionPending(r.room_id) === "delete" ? "..." : "删除"}
-                          </button>
-                          <button
-                            className="button button--ghost button--sm"
-                            onClick={() => handleLeave(r.room_id)}
-                            disabled={pendingAction !== null}
-                            type="button"
-                            style={{ flexShrink: 0, marginLeft: "4px" }}
-                          >
-                            {isActionPending(r.room_id) === "leave" ? "..." : "离开"}
+                            {deletingRoomId === r.room_id ? "..." : "删除"}
                           </button>
                         </div>
                       ))}
