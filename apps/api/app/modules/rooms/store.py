@@ -420,17 +420,20 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
             if room_id in self._state["rooms"]:
                 del self._state["rooms"][room_id]
                 self._save()
-                # Also clean up SQLite so the room doesn't reappear on reload
-                db = self._get_db()
-                if db is not None:
-                    with db:
-                        db.execute("DELETE FROM dice_rolls WHERE room_id = ?", (room_id,))
-                        db.execute("DELETE FROM characters WHERE room_id = ?", (room_id,))
-                        db.execute("DELETE FROM messages WHERE room_id = ?", (room_id,))
-                        db.execute("DELETE FROM room_members WHERE room_id = ?", (room_id,))
-                        db.execute("DELETE FROM rooms WHERE id = ?", (room_id,))
+                self._purge_room_from_sqlite(room_id)
                 return True
             return False
+
+    def _purge_room_from_sqlite(self, room_id: str) -> None:
+        db = self._get_db()
+        if db is None:
+            return
+        with db:
+            db.execute("DELETE FROM dice_rolls WHERE room_id = ?", (room_id,))
+            db.execute("DELETE FROM characters WHERE room_id = ?", (room_id,))
+            db.execute("DELETE FROM messages WHERE room_id = ?", (room_id,))
+            db.execute("DELETE FROM room_members WHERE room_id = ?", (room_id,))
+            db.execute("DELETE FROM rooms WHERE id = ?", (room_id,))
 
     def leave_room(self, room_id: str, user_id: str) -> bool:
         """Remove a user's membership from a room (for personal history cleanup)."""
@@ -1084,15 +1087,8 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                         pass
             if to_remove:
                 self._save()
-                db = self._get_db()
-                if db is not None:
-                    for rid in to_remove:
-                        db.execute("DELETE FROM rooms WHERE id = ?", (rid,))
-                        db.execute("DELETE FROM room_members WHERE room_id = ?", (rid,))
-                        db.execute("DELETE FROM messages WHERE room_id = ?", (rid,))
-                        db.execute("DELETE FROM characters WHERE room_id = ?", (rid,))
-                        db.execute("DELETE FROM dice_rolls WHERE room_id = ?", (rid,))
-                    db.commit()
+                for rid in to_remove:
+                    self._purge_room_from_sqlite(rid)
             return len(to_remove)
 
     def _format_roll_message(self, roll: dict) -> str:

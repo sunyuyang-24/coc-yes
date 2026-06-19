@@ -37,6 +37,8 @@ type UserChar = {
   updated_at: string;
 };
 
+type PendingAction = { roomId: string; action: "leave" | "delete" } | null;
+
 export default function AdminPage() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,11 +52,12 @@ export default function AdminPage() {
   const [userRooms, setUserRooms] = useState<UserRoom[]>([]);
   const [userChars, setUserChars] = useState<UserChar[]>([]);
   const [loadingDetail, setLoadingDetail] = useState<"rooms" | "chars" | null>(null);
-  const [leaving, setLeaving] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"rooms" | "chars">("rooms");
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ roomId: string; roomName: string } | null>(null);
   const [charDetail, setCharDetail] = useState<CharacterCard | null>(null);
   const [charDetailLoading, setCharDetailLoading] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     const u = getUser();
@@ -96,17 +99,21 @@ export default function AdminPage() {
       setUserRooms([]);
       setUserChars([]);
       setLoadingDetail(null);
+      setActiveTab("rooms");
       return;
     }
     setSelectedUser(u);
     setUserRooms([]);
     setUserChars([]);
     setLoadingDetail(null);
+    setActiveTab("rooms");
   }
 
   async function fetchRooms() {
     if (!selectedUser) return;
     setLoadingDetail("rooms");
+    setActiveTab("rooms");
+    setActionError("");
     try {
       const data = await apiRequest<UserRoom[]>(`/api/admin/users/${selectedUser.id}/rooms`);
       setUserRooms(data);
@@ -117,6 +124,7 @@ export default function AdminPage() {
   async function fetchChars() {
     if (!selectedUser) return;
     setLoadingDetail("chars");
+    setActiveTab("chars");
     try {
       const data = await apiRequest<UserChar[]>(`/api/admin/users/${selectedUser.id}/characters`);
       setUserChars(data);
@@ -130,25 +138,33 @@ export default function AdminPage() {
     }
   }, [selectedUser]);
 
+  function removeRoomFromState(roomId: string) {
+    if (!selectedUser) return;
+    setUserRooms((prev) => prev.filter((r) => r.room_id !== roomId));
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.id === selectedUser.id ? { ...u, room_count: Math.max(0, u.room_count - 1) } : u
+      )
+    );
+  }
+
   async function handleLeave(roomId: string) {
     if (!selectedUser) return;
-    setLeaving(roomId);
+    setActionError("");
+    setPendingAction({ roomId, action: "leave" });
     try {
       await apiRequest(
         `/api/admin/users/${selectedUser.id}/rooms/${roomId}/leave`,
         { method: "POST" }
       );
-      setUserRooms((prev) => prev.filter((r) => r.room_id !== roomId));
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === selectedUser.id ? { ...u, room_count: Math.max(0, u.room_count - 1) } : u
-        )
-      );
-    } catch { /* ignore */ }
-    setLeaving(null);
+      removeRoomFromState(roomId);
+    } catch {
+      setActionError("离开房间失败，请重试");
+    }
+    setPendingAction(null);
   }
 
-  async function handleDeleteRoom(roomId: string, roomName: string) {
+  function handleDeleteRoom(roomId: string, roomName: string) {
     setDeleteConfirm({ roomId, roomName });
   }
 
@@ -156,20 +172,15 @@ export default function AdminPage() {
     if (!deleteConfirm || !selectedUser) return;
     const roomId = deleteConfirm.roomId;
     setDeleteConfirm(null);
-    setDeleting(roomId);
+    setActionError("");
+    setPendingAction({ roomId, action: "delete" });
     try {
-      await apiRequest(
-        `/api/admin/rooms/${roomId}/delete`,
-        { method: "POST" }
-      );
-      setUserRooms((prev) => prev.filter((r) => r.room_id !== roomId));
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === selectedUser.id ? { ...u, room_count: Math.max(0, u.room_count - 1) } : u
-        )
-      );
-    } catch { /* ignore */ }
-    setDeleting(null);
+      await apiRequest(`/api/admin/rooms/${roomId}/delete`, { method: "POST" });
+      removeRoomFromState(roomId);
+    } catch {
+      setActionError("删除房间失败，请检查权限或稍后重试");
+    }
+    setPendingAction(null);
   }
 
   async function handleViewChar(charId: string) {
@@ -248,6 +259,9 @@ export default function AdminPage() {
     );
   }
 
+  const isActionPending = (roomId: string) =>
+    pendingAction?.roomId === roomId ? pendingAction.action : null;
+
   return (
     <div style={{ maxWidth: "1080px", margin: "40px auto", padding: "0 24px" }}>
       {charDetail && renderCharDetail()}
@@ -290,7 +304,7 @@ export default function AdminPage() {
       </div>
 
       <div style={{ display: "flex", gap: "24px" }}>
-                <div style={{ flex: users.length > 0 ? "0 0 340px" : "1", minWidth: 0 }}>
+        <div style={{ flex: users.length > 0 ? "0 0 340px" : "1", minWidth: 0 }}>
           <div className="setup-card" style={{ padding: "0" }}>
             <div style={{ padding: "16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: "13px", color: "var(--text-muted)", fontWeight: 500 }}>
@@ -347,7 +361,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-                <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           {!selectedUser ? (
             <div className="setup-card" style={{ textAlign: "center", padding: "48px 24px" }}>
               <p style={{ color: "var(--text-muted)", fontSize: "14px", margin: 0 }}>
@@ -365,15 +379,15 @@ export default function AdminPage() {
                 </div>
               </div>
 
-                            <div style={{ display: "flex", borderBottom: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", borderBottom: "1px solid var(--border)" }}>
                 <button
                   className="button--reset"
                   onClick={fetchRooms}
                   style={{
                     flex: 1, padding: "10px", textAlign: "center", fontSize: "13px",
-                    color: loadingDetail === "rooms" || (!loadingDetail) ? "var(--text)" : "var(--text-muted)",
-                    borderBottom: loadingDetail === "rooms" || (!loadingDetail) ? "2px solid var(--accent)" : "2px solid transparent",
-                    fontWeight: loadingDetail === "rooms" || (!loadingDetail) ? 600 : 400,
+                    color: activeTab === "rooms" ? "var(--text)" : "var(--text-muted)",
+                    borderBottom: activeTab === "rooms" ? "2px solid var(--accent)" : "2px solid transparent",
+                    fontWeight: activeTab === "rooms" ? 600 : 400,
                   }}
                 >
                   KP ({selectedUser.room_count})
@@ -383,9 +397,9 @@ export default function AdminPage() {
                   onClick={fetchChars}
                   style={{
                     flex: 1, padding: "10px", textAlign: "center", fontSize: "13px",
-                    color: loadingDetail === "chars" ? "var(--text)" : "var(--text-muted)",
-                    borderBottom: loadingDetail === "chars" ? "2px solid var(--accent)" : "2px solid transparent",
-                    fontWeight: loadingDetail === "chars" ? 600 : 400,
+                    color: activeTab === "chars" ? "var(--text)" : "var(--text-muted)",
+                    borderBottom: activeTab === "chars" ? "2px solid var(--accent)" : "2px solid transparent",
+                    fontWeight: activeTab === "chars" ? 600 : 400,
                   }}
                 >
                   调查员 ({selectedUser.character_count})
@@ -398,7 +412,13 @@ export default function AdminPage() {
                 </div>
               )}
 
-              {!loadingDetail && (loadingDetail !== "chars") && (
+              {actionError && (
+                <div style={{ padding: "8px 16px", fontSize: "12px", color: "var(--danger)", textAlign: "center" }}>
+                  {actionError}
+                </div>
+              )}
+
+              {!loadingDetail && activeTab === "rooms" && (
                 <>
                   {userRooms.length === 0 ? (
                     <div style={{ padding: "24px", textAlign: "center", fontSize: "13px", color: "var(--text-muted)" }}>
@@ -441,20 +461,20 @@ export default function AdminPage() {
                           <button
                             className="button button--ghost button--sm"
                             onClick={() => handleDeleteRoom(r.room_id, r.room_name)}
-                            disabled={deleting === r.room_id}
+                            disabled={pendingAction !== null}
                             type="button"
                             style={{ flexShrink: 0, marginLeft: "12px", color: "var(--danger)" }}
                           >
-                            {deleting === r.room_id ? "..." : "删除"}
+                            {isActionPending(r.room_id) === "delete" ? "..." : "删除"}
                           </button>
                           <button
                             className="button button--ghost button--sm"
                             onClick={() => handleLeave(r.room_id)}
-                            disabled={leaving === r.room_id}
+                            disabled={pendingAction !== null}
                             type="button"
                             style={{ flexShrink: 0, marginLeft: "4px" }}
                           >
-                            {leaving === r.room_id ? "..." : "离开"}
+                            {isActionPending(r.room_id) === "leave" ? "..." : "离开"}
                           </button>
                         </div>
                       ))}
@@ -463,7 +483,7 @@ export default function AdminPage() {
                 </>
               )}
 
-              {!loadingDetail && loadingDetail === "chars" && (
+              {!loadingDetail && activeTab === "chars" && (
                 <>
                   {userChars.length === 0 ? (
                     <div style={{ padding: "24px", textAlign: "center", fontSize: "13px", color: "var(--text-muted)" }}>
