@@ -28,6 +28,7 @@ def main():
         sys.exit(1)
 
     conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
     try:
         cur = conn.execute("SELECT id, username, is_admin FROM users WHERE username = ?", (args.username,))
         row = cur.fetchone()
