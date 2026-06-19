@@ -324,6 +324,9 @@ export function RoomConsole() {
       }).catch(() => { /* ignore - guest mode or already bound */ });
     }
   }
+  async function deleteRoomFromHistory(roomId: string) {
+    await apiRequest(`/api/rooms/${roomId}/leave`, { method: "POST" });
+  }
   async function saveModuleIntro() {
     if (!room || !memberId) return;
     await apiRequest(`/api/rooms/${room.id}/intro`, { method: "PATCH",
@@ -391,6 +394,7 @@ export function RoomConsole() {
         setNotice={setNotice}
         createRoom={createRoom}
         joinRoom={joinRoom}
+        onDeleteRoom={deleteRoomFromHistory}
       />
     );
   }

@@ -541,6 +541,18 @@ async def delete_room(room_id: str, editor_id: str = Form(..., alias="editorId")
     return {"deleted": True}
 
 
+@router.post("/rooms/{room_id}/leave")
+async def leave_room(room_id: str, request: Request) -> dict:
+    user_id = getattr(request.state, "user_id", None)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        removed = store.leave_room(room_id, user_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Room not found") from None
+    return {"left": removed}
+
+
 @router.post("/rooms/{room_id}/characters/remove")
 async def remove_room_character(room_id: str, member_id: str = Form(..., alias="memberId")) -> dict:
     try:

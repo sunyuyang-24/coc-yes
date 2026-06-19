@@ -1,7 +1,6 @@
 "use client";
 
-import type { FormEvent, MouseEvent } from "react";
-import { useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { RoomDetail, UserInfo } from "@coc-yes/shared";
 import { apiRequest } from "@/lib/api";
 import { clearAuth, login, register } from "@/lib/auth";
@@ -29,6 +28,7 @@ type Props = {
   setNotice: (msg: string) => void;
   createRoom: (e: FormEvent<HTMLFormElement>) => Promise<void>;
   joinRoom: (e: FormEvent<HTMLFormElement>) => Promise<void>;
+  onDeleteRoom: (roomId: string) => Promise<void>;
 };
 
 export function RoomSetup({
@@ -37,7 +37,7 @@ export function RoomSetup({
   roomPassword, setRoomPassword, joinPassword, setJoinPassword,
   joinAsSpectator, setJoinAsSpectator, inviteCode, setInviteCode,
   playerName, setPlayerName, enterRoom, setRoom, setMemberId,
-  setNotice, createRoom, joinRoom,
+  setNotice, createRoom, joinRoom, onDeleteRoom,
 }: Props) {
   return (
     <div style={{
@@ -57,6 +57,7 @@ export function RoomSetup({
             enterRoom={enterRoom}
             setRoom={setRoom}
             setMemberId={setMemberId}
+            onDeleteRoom={onDeleteRoom}
           />
         ) : (
           <LoginCard onAuth={() => setIsLoggedIn(true)} />
@@ -87,9 +88,31 @@ export function RoomSetup({
 
 /* ---- Column 1: Player Card (logged in) ---- */
 
+function ConfirmModal({
+  title, message, confirmLabel, onConfirm, onCancel, loading,
+}: {
+  title: string; message: React.ReactNode; confirmLabel: string;
+  onConfirm: () => void; onCancel: () => void; loading?: boolean;
+}) {
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "360px", padding: "24px" }}>
+        <div style={{ fontSize: "14px", color: "var(--text)", marginBottom: "8px", fontWeight: 500 }}>{title}</div>
+        <div style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "20px", lineHeight: 1.6 }}>{message}</div>
+        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+          <button className="button button--ghost button--sm" onClick={onConfirm} disabled={loading} type="button">
+            {loading ? `${confirmLabel}中...` : confirmLabel}
+          </button>
+          <button className="button button--danger button--sm" onClick={onCancel} type="button">取消</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PlayerCard({
   currentUser, myRooms, loadingRooms, setMyRooms, setLoadingRooms,
-  setIsLoggedIn, enterRoom, setRoom, setMemberId,
+  setIsLoggedIn, enterRoom, setRoom, setMemberId, onDeleteRoom,
 }: {
   currentUser: UserInfo | null;
   myRooms: MyRoom[];
@@ -100,7 +123,60 @@ function PlayerCard({
   enterRoom: (room: RoomDetail, memberId: string) => void;
   setRoom: (room: RoomDetail | null) => void;
   setMemberId: (id: string | null) => void;
+  onDeleteRoom: (roomId: string) => Promise<void>;
 }) {
+  const [deleteTarget, setDeleteTarget] = useState<MyRoom | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const enteringRef = useRef(false);
+
+  const fetchMyRooms = useCallback(() => {
+    setLoadingRooms(true);
+    apiRequest<{ rooms: MyRoom[] }>("/api/rooms/mine")
+      .then(data => setMyRooms(data.rooms))
+      .catch(() => {})
+      .finally(() => setLoadingRooms(false));
+  }, [setLoadingRooms, setMyRooms]);
+
+  useEffect(() => { fetchMyRooms(); }, [fetchMyRooms]);
+
+  function handleLogout() {
+    clearAuth();
+    setIsLoggedIn(false);
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await onDeleteRoom(deleteTarget.id);
+      setMyRooms(myRooms.filter(r => r.id !== deleteTarget.id));
+    } catch { /* keep room in list, user can retry */ }
+    setDeleting(false);
+    setDeleteTarget(null);
+  }
+
+  async function handleEnterRoom(r: MyRoom) {
+    if (enteringRef.current) return;
+    enteringRef.current = true;
+    try {
+      if (r.status !== "ended") {
+        const joinData = await apiRequest<{ room: RoomDetail; currentMemberId: string }>(
+          `/api/rooms/join`, { method: "POST", body: JSON.stringify({
+            invite_code: r.inviteCode,
+            display_name: currentUser?.display_name || currentUser?.username || "",
+            role: "player",
+          })});
+        enterRoom(joinData.room, joinData.currentMemberId);
+      } else {
+        const data = await apiRequest<{ room: RoomDetail }>(`/api/rooms/${r.id}`);
+        setRoom(data.room);
+        setMemberId("");
+      }
+    } catch { /* join/view failed — user can retry */ }
+    enteringRef.current = false;
+  }
+
   return (
     <div className="setup-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -108,58 +184,88 @@ function PlayerCard({
           <p className="panel__kicker">已登录</p>
           <h2>{currentUser?.display_name || currentUser?.username || "玩家"}</h2>
         </div>
-        <button className="button button--ghost button--sm" onClick={() => { clearAuth(); setIsLoggedIn(false); }} type="button">
+        <button className="button button--ghost button--sm" onClick={() => setShowLogoutConfirm(true)} type="button">
           退出
         </button>
       </div>
-      <div style={{ marginTop: "12px" }}>
-        <button className="button button--ghost button--sm" onClick={async () => {
-          setLoadingRooms(true);
-          try {
-            const data = await apiRequest<{ rooms: MyRoom[] }>("/api/rooms/mine");
-            setMyRooms(data.rooms);
-          } catch { /* ignore */ }
-          setLoadingRooms(false);
-        }} type="button">
-          {loadingRooms ? "加载中..." : "我的房间"}
-        </button>
-      </div>
-      {myRooms.length > 0 && (
-        <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
-          {myRooms.map((r) => (
-            <div key={r.id} style={{
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-              padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--border)",
-              background: "var(--bg-hover)", fontSize: "13px",
-            }}>
-              <div>
-                <span style={{ color: "var(--text)", fontWeight: 500 }}>{r.name}</span>
-                <span style={{ color: "var(--text-muted)", marginLeft: "8px" }}>
-                  {r.status === "active" ? "进行中" : r.status === "preparing" ? "准备中" : "已结束"}
-                </span>
-              </div>
-              <button className="button button--ghost button--sm" onClick={async () => {
-                try {
-                  const data = await apiRequest<{ room: RoomDetail }>(`/api/rooms/${r.id}`);
-                  if (data.room.status !== "ended") {
-                    const joinData = await apiRequest<{ room: RoomDetail; currentMemberId: string }>(
-                      `/api/rooms/join`, { method: "POST", body: JSON.stringify({
-                        invite_code: r.inviteCode,
-                        display_name: currentUser?.display_name || currentUser?.username || "",
-                        role: "player",
-                      })});
-                    enterRoom(joinData.room, joinData.currentMemberId);
-                  } else {
-                    setRoom(data.room);
-                    setMemberId("");
-                  }
-                } catch { /* ignore */ }
-              }} type="button">
-                进入
-              </button>
-            </div>
-          ))}
+
+      <div style={{ marginTop: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+          <span style={{ fontSize: "13px", color: "var(--text-muted)", fontWeight: 500 }}>房间历史</span>
+          <button className="button button--ghost button--sm" onClick={fetchMyRooms} type="button" title="刷新">
+            {loadingRooms ? "..." : "↻"}
+          </button>
         </div>
+
+        {myRooms.length === 0 && !loadingRooms && (
+          <div style={{ fontSize: "13px", color: "var(--text-muted)", padding: "12px 0", textAlign: "center" }}>
+            暂无历史房间
+          </div>
+        )}
+        {loadingRooms && myRooms.length === 0 && (
+          <div style={{ fontSize: "13px", color: "var(--text-muted)", padding: "12px 0", textAlign: "center" }}>
+            加载中...
+          </div>
+        )}
+
+        {myRooms.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "280px", overflowY: "auto" }}>
+            {myRooms.map((r) => (
+              <div key={r.id} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--border)",
+                background: "var(--bg-hover)", fontSize: "13px", position: "relative",
+              }}>
+                <button
+                  className="button--reset"
+                  onClick={() => handleEnterRoom(r)}
+                  style={{ flexDirection: "column", alignItems: "flex-start", gap: "2px", flex: 1, minWidth: 0, color: "var(--text)" }}
+                >
+                  <span style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{r.name}</span>
+                  <span style={{ color: "var(--text-muted)", fontSize: "11px" }}>
+                    {r.status === "active" ? "进行中" : r.status === "preparing" ? "准备中" : "已结束"}
+                  </span>
+                </button>
+                <button
+                  className="button button--ghost button--sm"
+                  onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}
+                  type="button"
+                  title="删除此记录"
+                  style={{ position: "absolute", top: "4px", right: "4px", fontSize: "14px", lineHeight: 1, padding: "2px 6px" }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showLogoutConfirm && (
+        <ConfirmModal
+          title="退出登录"
+          message={<>
+            确定要退出登录吗？<br />
+            <span style={{ color: "var(--danger)" }}>当前会话将丢失，房间记录仍会保留在服务器上。</span>
+          </>}
+          confirmLabel="确定"
+          onConfirm={handleLogout}
+          onCancel={() => setShowLogoutConfirm(false)}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmModal
+          title="删除房间记录"
+          message={<>
+            确定要删除「{deleteTarget.name}」的历史记录吗？<br />
+            <span style={{ color: "var(--danger)" }}>此操作不可恢复。</span>
+          </>}
+          confirmLabel="确定"
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteTarget(null)}
+          loading={deleting}
+        />
       )}
     </div>
   );

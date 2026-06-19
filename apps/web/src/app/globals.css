@@ -119,6 +119,7 @@ button, input, select, textarea, label { font-family: var(--font-sans); }
 .button--whisper { color: #B8B0F0; background: transparent; }
 .button--whisper:hover { background: rgba(122,106,176,0.10); }
 .button--sm { height: 32px; padding: 0 12px; font-size: 13px; }
+.button--reset { display: inline-flex; background: none; border: none; cursor: pointer; padding: 0; color: inherit; font: inherit; text-align: inherit; }
 
 /* ================================================================== */
 /* Forms

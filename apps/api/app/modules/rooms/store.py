@@ -423,6 +423,17 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
                 return True
             return False
 
+    def leave_room(self, room_id: str, user_id: str) -> bool:
+        """Remove a user's membership from a room (for personal history cleanup)."""
+        with self._lock:
+            room = self._require_room(room_id)
+            before = len(room.get("members", []))
+            room["members"] = [m for m in room.get("members", []) if m.get("userId") != user_id]
+            removed = len(room["members"]) < before
+            if removed:
+                self._save()
+            return removed
+
     def delete_message(self, room_id: str, message_id: str, editor_id: str) -> dict | None:
         """Delete a message. KP can delete any message; sender can delete own message."""
         with self._lock:
