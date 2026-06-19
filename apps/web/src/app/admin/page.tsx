@@ -52,6 +52,7 @@ export default function AdminPage() {
   const [loadingDetail, setLoadingDetail] = useState<"rooms" | "chars" | null>(null);
   const [leaving, setLeaving] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ roomId: string; roomName: string } | null>(null);
   const [charDetail, setCharDetail] = useState<CharacterCard | null>(null);
   const [charDetailLoading, setCharDetailLoading] = useState(false);
 
@@ -147,9 +148,14 @@ export default function AdminPage() {
     setLeaving(null);
   }
 
-  async function handleDeleteRoom(roomId: string) {
-    if (!selectedUser) return;
-    if (!confirm("确定要永久删除该房间吗？此操作不可撤销。")) return;
+  async function handleDeleteRoom(roomId: string, roomName: string) {
+    setDeleteConfirm({ roomId, roomName });
+  }
+
+  async function confirmDeleteRoom() {
+    if (!deleteConfirm || !selectedUser) return;
+    const roomId = deleteConfirm.roomId;
+    setDeleteConfirm(null);
     setDeleting(roomId);
     try {
       await apiRequest(
@@ -245,6 +251,31 @@ export default function AdminPage() {
   return (
     <div style={{ maxWidth: "1080px", margin: "40px auto", padding: "0 24px" }}>
       {charDetail && renderCharDetail()}
+
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "360px", padding: "24px", textAlign: "center" }}>
+            <h3 style={{ margin: "0 0 12px", fontSize: "16px" }}>确认删除房间</h3>
+            <p style={{ margin: "0 0 8px", fontSize: "13px", color: "var(--text-muted)" }}>
+              将永久删除房间
+            </p>
+            <p style={{ margin: "0 0 20px", fontSize: "14px", fontWeight: 600, color: "var(--text)" }}>
+              {deleteConfirm.roomName}
+            </p>
+            <p style={{ margin: "0 0 20px", fontSize: "12px", color: "var(--danger)" }}>
+              此操作不可撤销，将同时删除房间内的所有消息、角色卡和骰子记录。
+            </p>
+            <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+              <button className="button button--danger" onClick={confirmDeleteRoom} type="button">
+                确认删除
+              </button>
+              <button className="button button--ghost" onClick={() => setDeleteConfirm(null)} type="button">
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
         <div>
@@ -409,7 +440,7 @@ export default function AdminPage() {
                           </div>
                           <button
                             className="button button--ghost button--sm"
-                            onClick={() => handleDeleteRoom(r.room_id)}
+                            onClick={() => handleDeleteRoom(r.room_id, r.room_name)}
                             disabled={deleting === r.room_id}
                             type="button"
                             style={{ flexShrink: 0, marginLeft: "12px", color: "var(--danger)" }}

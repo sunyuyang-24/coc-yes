@@ -420,6 +420,15 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
             if room_id in self._state["rooms"]:
                 del self._state["rooms"][room_id]
                 self._save()
+                # Also clean up SQLite so the room doesn't reappear on reload
+                db = self._get_db()
+                if db is not None:
+                    with db:
+                        db.execute("DELETE FROM dice_rolls WHERE room_id = ?", (room_id,))
+                        db.execute("DELETE FROM characters WHERE room_id = ?", (room_id,))
+                        db.execute("DELETE FROM messages WHERE room_id = ?", (room_id,))
+                        db.execute("DELETE FROM room_members WHERE room_id = ?", (room_id,))
+                        db.execute("DELETE FROM rooms WHERE id = ?", (room_id,))
                 return True
             return False
 
