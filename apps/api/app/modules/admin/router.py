@@ -92,3 +92,12 @@ async def admin_leave_room(user_id: str, room_id: str, request: Request):
     except KeyError:
         return JSONResponse({"error": "Room not found"}, status_code=404)
     return {"left": removed}
+
+
+@router.post("/admin/rooms/{room_id}/delete")
+async def admin_delete_room(room_id: str, request: Request):
+    require_admin(request)
+    deleted = store.delete_room(room_id)
+    if not deleted:
+        return JSONResponse({"error": "Room not found"}, status_code=404)
+    return {"deleted": True}

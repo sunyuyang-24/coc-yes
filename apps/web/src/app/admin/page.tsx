@@ -51,6 +51,7 @@ export default function AdminPage() {
   const [userChars, setUserChars] = useState<UserChar[]>([]);
   const [loadingDetail, setLoadingDetail] = useState<"rooms" | "chars" | null>(null);
   const [leaving, setLeaving] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [charDetail, setCharDetail] = useState<CharacterCard | null>(null);
   const [charDetailLoading, setCharDetailLoading] = useState(false);
 
@@ -144,6 +145,25 @@ export default function AdminPage() {
       );
     } catch { /* ignore */ }
     setLeaving(null);
+  }
+
+  async function handleDeleteRoom(roomId: string) {
+    if (!selectedUser) return;
+    if (!confirm("确定要永久删除该房间吗？此操作不可撤销。")) return;
+    setDeleting(roomId);
+    try {
+      await apiRequest(
+        `/api/admin/rooms/${roomId}/delete`,
+        { method: "POST" }
+      );
+      setUserRooms((prev) => prev.filter((r) => r.room_id !== roomId));
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === selectedUser.id ? { ...u, room_count: Math.max(0, u.room_count - 1) } : u
+        )
+      );
+    } catch { /* ignore */ }
+    setDeleting(null);
   }
 
   async function handleViewChar(charId: string) {
@@ -389,10 +409,19 @@ export default function AdminPage() {
                           </div>
                           <button
                             className="button button--ghost button--sm"
+                            onClick={() => handleDeleteRoom(r.room_id)}
+                            disabled={deleting === r.room_id}
+                            type="button"
+                            style={{ flexShrink: 0, marginLeft: "12px", color: "var(--danger)" }}
+                          >
+                            {deleting === r.room_id ? "..." : "删除"}
+                          </button>
+                          <button
+                            className="button button--ghost button--sm"
                             onClick={() => handleLeave(r.room_id)}
                             disabled={leaving === r.room_id}
                             type="button"
-                            style={{ flexShrink: 0, marginLeft: "12px" }}
+                            style={{ flexShrink: 0, marginLeft: "4px" }}
                           >
                             {leaving === r.room_id ? "..." : "离开"}
                           </button>
