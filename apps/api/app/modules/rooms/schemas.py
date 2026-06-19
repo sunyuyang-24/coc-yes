@@ -1,5 +1,5 @@
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Optional, Literal
 
 
 class CamelModel(BaseModel):
@@ -66,8 +66,52 @@ class SanCheckRequest(CamelModel):
     hidden: bool = Field(default=False)
 
 
-# ── Combat ──
+# ── Combat (COC 7e Melee) ──
 
+CombatActionType = Literal["melee_attack", "melee_maneuver", "skip"]
+CombatDefenseType = Literal["dodge", "fight_back", "maneuver", "none"]
+
+
+class CombatDeclarationModel(CamelModel):
+    character_id: str = Field(alias="characterId")
+    action_type: CombatActionType = Field(alias="actionType")
+    weapon_index: Optional[int] = Field(default=None, alias="weaponIndex")
+    target_character_ids: list[str] = Field(alias="targetCharacterIds")
+
+    @field_validator("target_character_ids")
+    @classmethod
+    def _single_melee_target(cls, v: list[str]) -> list[str]:
+        if len(v) > 1:
+            raise ValueError("近战攻击只能声明一个目标")
+        return v
+
+
+class CombatDefenseModel(CamelModel):
+    intent_id: str = Field(alias="intentId")
+    defender_character_id: str = Field(alias="defenderCharacterId")
+    defense_type: CombatDefenseType = Field(alias="defenseType")
+    weapon_index: Optional[int] = Field(default=None, alias="weaponIndex")
+
+
+class DeclareCombatIntentsRequest(CamelModel):
+    member_id: str = Field(alias="memberId")
+    declarations: list[CombatDeclarationModel]
+
+
+class DeclareCombatDefensesRequest(CamelModel):
+    member_id: str = Field(alias="memberId")
+    defenses: list[CombatDefenseModel]
+
+
+class ResolveCombatRequest(CamelModel):
+    editor_id: str = Field(alias="editorId")
+
+
+class NextCombatRoundRequest(CamelModel):
+    editor_id: str = Field(alias="editorId")
+
+
+# Legacy alias (keep old field-level interface for backwards compat reference)
 class CombatActionRequest(CamelModel):
     attacker_id: str = Field(alias="attackerId")
     weapon_index: int = Field(default=0, alias="weaponIndex")

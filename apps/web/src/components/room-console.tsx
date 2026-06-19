@@ -368,7 +368,7 @@ export function RoomConsole() {
   [memberId, room?.characters]);
 
   // ---- RENDER: Login gate + Setup screens ----
-  if (!isLoggedIn || !room) {
+  if (!room) {
     return (
       <RoomSetup
         isLoggedIn={isLoggedIn}

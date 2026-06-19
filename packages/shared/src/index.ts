@@ -153,34 +153,100 @@ export type SanCheckRequest = {
   hidden: boolean;
 };
 
-// ── Combat ──
+// ── Combat (COC 7e Melee) ──
 
-export type CombatActor = {
-  memberId: string;
+export type CombatStatus = "active" | "unconscious" | "dying" | "dead";
+export type CombatPhase = "declaration" | "resolution" | "ended";
+
+export type CombatParticipant = {
   characterId: string;
+  controllerMemberId: string;
   displayName: string;
   dex: number;
   hp: number;
   hpMax: number;
+  armor: number;
   db: string;
   build: number;
+  status: CombatStatus;
   hasActedThisRound: boolean;
+  majorWound?: boolean;
 };
 
-export type CombatActionRequest = {
-  attackerId: string;
-  weaponIndex: number;
-  defenderId: string;
-  actionType: "attack" | "dodge" | "maneuver" | "fight_back";
-  hidden: boolean;
+export type CombatIntent = {
+  intentId: string;
+  attackerCharacterId: string;
+  actionType: "melee_attack" | "melee_maneuver" | "skip";
+  weaponIndex: number | null;
+  targetCharacterIds: string[];
+  resolved: boolean;
+};
+
+export type CombatDefense = {
+  intentId: string;
+  defenderCharacterId: string;
+  defenseType: "dodge" | "fight_back" | "maneuver" | "none";
+  weaponIndex: number | null;
+};
+
+export type CombatRoll = {
+  expression: string;
+  total: number;
+  breakdown?: Array<{ kind: string; count: number; sides: number; rolls: number[]; modifier: number; tensRolls?: number[]; ones?: number; chosenTens?: number }>;
+  targetValue: number | null;
+  bonusPenalty: number;
+  successLevel: "critical" | "extreme" | "hard" | "regular" | "failure" | "fumble" | null;
+  successLabel: string | null;
+};
+
+export type CombatLogEntry = {
+  roundNumber: number;
+  attacker: {
+    characterId: string;
+    displayName: string;
+    roll: CombatRoll | null;
+    actionType: string;
+  };
+  defender: {
+    characterId: string;
+    displayName: string;
+    defenseType: string;
+    roll: CombatRoll | null;
+  };
+  damageRolled: number | null;
+  damageAfterArmor: number | null;
+  armorUsed: number | null;
+  impale: boolean;
+  majorWound: boolean;
+  statusChanged: { from: CombatStatus; to: CombatStatus } | null;
+  resultText: string;
+  timestamp: string;
 };
 
 export type CombatState = {
   active: boolean;
   roundNumber: number;
-  actors: CombatActor[];
-  currentActorIndex: number;
+  phase: CombatPhase;
+  participants: CombatParticipant[];
+  intents: CombatIntent[];
+  defenses: CombatDefense[];
+  logs: CombatLogEntry[];
+  currentIntentIndex: number;
   createdAt: string;
+};
+
+export type CombatDeclaration = {
+  characterId: string;
+  actionType: "melee_attack" | "melee_maneuver" | "skip";
+  weaponIndex: number | null;
+  targetCharacterIds: string[];
+};
+
+export type CombatDefenseInput = {
+  intentId: string;
+  defenderCharacterId: string;
+  defenseType: "dodge" | "fight_back" | "maneuver" | "none";
+  weaponIndex: number | null;
 };
 
 // ── Chase ──

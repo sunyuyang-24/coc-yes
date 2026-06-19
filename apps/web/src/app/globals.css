@@ -19,8 +19,11 @@
   --brand: #7AAA7A;
   --brand-hover: #8CBC8C;
   --brand-light: rgba(122,170,122,0.10);
+  --accent: var(--brand);
+  --accent-hover: var(--brand-hover);
   --error: #D94A4A;
   --error-light: rgba(217,74,74,0.08);
+  --danger: var(--error);
   --success: #6AAA6A;
   --warning: #C89B46;
   --radius-sm: 3px;

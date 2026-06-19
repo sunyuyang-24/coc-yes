@@ -41,6 +41,12 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Keys
+*.pem
+
+# Local design assets
+画板*.png
+
 # OS / editor
 .DS_Store
 Thumbs.db
