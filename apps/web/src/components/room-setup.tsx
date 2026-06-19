@@ -1,9 +1,11 @@
 "use client";
 
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import type { RoomDetail, UserInfo } from "@coc-yes/shared";
+import type { CharacterCard, RoomDetail, UserInfo } from "@coc-yes/shared";
+import { ROOM_STATUS_LABELS } from "@coc-yes/shared";
 import { apiRequest } from "@/lib/api";
 import { clearAuth, login, register } from "@/lib/auth";
+import { CharacterDetailModal } from "@/components/character-detail-modal";
 
 type MyRoom = { id: string; name: string; status: string; createdAt: string; inviteCode: string };
 
@@ -129,6 +131,10 @@ function PlayerCard({
   const [deleting, setDeleting] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const enteringRef = useRef(false);
+  const [savedChars, setSavedChars] = useState<Array<{ id: string; name: string; source_filename: string; updated_at: string }>>([]);
+  const [loadingChars, setLoadingChars] = useState(false);
+  const [charDetail, setCharDetail] = useState<CharacterCard | null>(null);
+  const [charDetailLoading, setCharDetailLoading] = useState(false);
 
   const fetchMyRooms = useCallback(() => {
     setLoadingRooms(true);
@@ -138,7 +144,15 @@ function PlayerCard({
       .finally(() => setLoadingRooms(false));
   }, [setLoadingRooms, setMyRooms]);
 
-  useEffect(() => { fetchMyRooms(); }, [fetchMyRooms]);
+  const fetchSavedChars = useCallback(() => {
+    setLoadingChars(true);
+    apiRequest<Array<{ id: string; name: string; source_filename: string; updated_at: string }>>("/api/user/characters")
+      .then(data => setSavedChars(data as Array<{ id: string; name: string; source_filename: string; updated_at: string }>))
+      .catch(() => {})
+      .finally(() => setLoadingChars(false));
+  }, []);
+
+  useEffect(() => { fetchMyRooms(); fetchSavedChars(); }, [fetchMyRooms, fetchSavedChars]);
 
   function handleLogout() {
     clearAuth();
@@ -223,7 +237,7 @@ function PlayerCard({
                 >
                   <span style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{r.name}</span>
                   <span style={{ color: "var(--text-muted)", fontSize: "11px" }}>
-                    {r.status === "active" ? "进行中" : r.status === "preparing" ? "准备中" : "已结束"}
+                    {ROOM_STATUS_LABELS[r.status] || r.status}
                   </span>
                 </button>
                 <button
@@ -240,6 +254,67 @@ function PlayerCard({
           </div>
         )}
       </div>
+
+      {/* Saved Character Cards */}
+      <div style={{ marginTop: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+          <span style={{ fontSize: "13px", color: "var(--text-muted)", fontWeight: 500 }}>已保存的调查员</span>
+          <button className="button button--ghost button--sm" onClick={fetchSavedChars} type="button" title="刷新">
+            {loadingChars ? "..." : "↻"}
+          </button>
+        </div>
+        {savedChars.length === 0 && !loadingChars && (
+          <div style={{ fontSize: "13px", color: "var(--text-muted)", padding: "12px 0", textAlign: "center" }}>
+            暂无已保存的角色卡
+          </div>
+        )}
+        {loadingChars && savedChars.length === 0 && (
+          <div style={{ fontSize: "13px", color: "var(--text-muted)", padding: "12px 0", textAlign: "center" }}>
+            加载中...
+          </div>
+        )}
+        {savedChars.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "200px", overflowY: "auto" }}>
+            {savedChars.map((c) => (
+              <div key={c.id} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--border)",
+                background: "var(--bg-hover)", fontSize: "13px",
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {c.name}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
+                    {c.source_filename}
+                  </div>
+                </div>
+                <button
+                  className="button button--ghost button--sm"
+                  onClick={() => {
+                    setCharDetailLoading(true);
+                    apiRequest<CharacterCard>(`/api/user/characters/${c.id}`)
+                      .then(data => { setCharDetail(data); setCharDetailLoading(false); })
+                      .catch(() => setCharDetailLoading(false));
+                  }}
+                  type="button"
+                  style={{ flexShrink: 0, marginLeft: "8px" }}
+                >
+                  查看
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Character Detail Modal */}
+      {charDetailLoading && (
+        <div style={{ textAlign: "center", padding: "12px", fontSize: "13px", color: "var(--text-muted)" }}>加载角色卡...</div>
+      )}
+      {charDetail && (
+        <CharacterDetailModal character={charDetail} onClose={() => setCharDetail(null)} />
+      )}
 
       {showLogoutConfirm && (
         <ConfirmModal

@@ -321,6 +321,25 @@ export type UserInfo = {
   username: string;
   display_name: string;
   created_at: string;
+  is_admin?: boolean;
+};
+
+export const ATTRIBUTE_LABELS: Record<string, string> = {
+  STR: "力量", DEX: "敏捷", POW: "意志", CON: "体质",
+  APP: "外貌", EDU: "教育", SIZ: "体型", INT: "智力", LUCK: "幸运",
+};
+
+export const STATUS_LABELS: Record<string, string> = {
+  hp: "HP", san: "SAN", mov: "MOV", mp: "MP",
+  db: "伤害加值", build: "体格", armor: "护甲",
+};
+
+export const ROOM_STATUS_LABELS: Record<string, string> = {
+  preparing: "准备中", active: "进行中", ended: "已结束",
+};
+
+export const ROLE_LABELS: Record<string, string> = {
+  keeper: "KP", player: "玩家", spectator: "观察者",
 };
 
 export type AuthResponse = {

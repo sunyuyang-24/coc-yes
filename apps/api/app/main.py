@@ -18,6 +18,8 @@ from app.modules.rooms.router import router as rooms_router, room_socket
 from app.modules.rooms.router_combat import router as combat_router
 from app.modules.rooms.router_chase import router as chase_router
 from app.modules.rooms.router_coc import router as coc_router
+from app.modules.admin.router import router as admin_router
+from app.modules.characters.user_router import router as user_chars_router
 from app.modules.rooms.deps import store
 from app.modules.rules.router import router as rules_router
 
@@ -95,6 +97,8 @@ app.include_router(combat_router, prefix="/api", tags=["combat"])
 app.include_router(chase_router, prefix="/api", tags=["chase"])
 app.include_router(coc_router, prefix="/api", tags=["coc"])
 app.include_router(rules_router, prefix="/api", tags=["rules"])
+app.include_router(user_chars_router, prefix="/api", tags=["user-characters"])
+app.include_router(admin_router, prefix="/api", tags=["admin"])
 
 
 @app.websocket("/api/rooms/{room_id}/ws")

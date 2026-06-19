@@ -5,6 +5,7 @@ from uuid import uuid4
 from app.core.config import settings
 from app.modules.characters.parser import parse_character_card
 from app.modules.characters.schemas import UpdateCharacterRequest
+from app.modules.characters.user_chars import save_user_character
 import json as _json
 
 from app.modules.dice.roller import (
@@ -272,12 +273,22 @@ async def create_npc_from_text(room_id: str, keeper_id: str = Form(..., alias="k
 
 
 @router.post("/rooms/{room_id}/characters/upload")
-async def upload_character(room_id: str, owner_id: str = Form(..., alias="ownerId"), file: UploadFile = File(...)) -> dict:
+async def upload_character(room_id: str, owner_id: str = Form(..., alias="ownerId"), file: UploadFile = File(...), request: Request = None) -> dict:
     try:
         content = await file.read()
         character = parse_character_card(content, file.filename or "character.xlsx")
         character_record = store.add_character(room_id, owner_id, character)
         room = store.get_room(room_id)
+
+        # Auto-save to user account if authenticated
+        if request is not None:
+            user_id = getattr(request.state, "user_id", None)
+            if user_id:
+                try:
+                    save_user_character(user_id, character, file.filename or "character.xlsx")
+                except Exception:
+                    import logging
+                    logging.getLogger("coc-yes").warning("Failed to save user character for user %s", user_id, exc_info=True)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except KeyError as error:

@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     display_name TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS rooms (
@@ -68,6 +69,17 @@ CREATE TABLE IF NOT EXISTS characters (
 );
 CREATE INDEX IF NOT EXISTS idx_characters_room ON characters(room_id);
 
+CREATE TABLE IF NOT EXISTS user_characters (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    data_json TEXT NOT NULL,
+    source_filename TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_user_chars_user ON user_characters(user_id);
+
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
     room_id TEXT NOT NULL REFERENCES rooms(id),
@@ -102,6 +114,13 @@ def init_db(data_dir: Path) -> None:
         _conn.row_factory = sqlite3.Row
         _conn.executescript(_SCHEMA)
         _conn.commit()
+
+        # 向已有数据库添加 is_admin 列
+        try:
+            _conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+            _conn.commit()
+        except Exception:
+            pass
 
         # 检查是否需要从 rooms.json 迁移
         json_path = data_dir / "rooms.json"

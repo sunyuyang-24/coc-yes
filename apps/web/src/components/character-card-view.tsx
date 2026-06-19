@@ -3,6 +3,7 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
 import type { CharacterCard } from "@coc-yes/shared";
+import { STATUS_LABELS } from "@coc-yes/shared";
 
 export function CharacterCardView({
   canEdit,
@@ -144,7 +145,7 @@ export function CharacterCardView({
             ))}
           </div>
           <div className="character-editor__locked">
-            <p className="character-editor__locked-title">?????????????????</p>
+            <p className="character-editor__locked-title">锁定字段（锁定后玩家无法查看对应属性值）</p>
             <div className="character-editor__locked-grid">
               {character.attributes.map((attr) => (
                 <label key={attr.key} className="locked-toggle">
@@ -154,10 +155,10 @@ export function CharacterCardView({
               ))}
             </div>
           </div>
-          <label>KP ??<textarea value={keeperNotes} onChange={(event) => setKeeperNotes(event.target.value)} /></label>
+          <label>KP 备注<textarea value={keeperNotes} onChange={(event) => setKeeperNotes(event.target.value)} /></label>
           <div className="character-editor__actions">
-            <button className="button button--primary" type="submit">?????</button>
-            <button className="button button--ghost" onClick={() => setEditing(false)} type="button">??</button>
+            <button className="button button--primary" type="submit">保存修改</button>
+            <button className="button button--ghost" onClick={() => setEditing(false)} type="button">取消</button>
           </div>
         </form>
       ) : null}
@@ -193,11 +194,9 @@ export function CharacterCardView({
 
       <div className="status-panel">
           {Object.entries(character.status).map(([key, val]) => {
-            if (val == null || key === "mp") return null;
-            const labels: Record<string, string> = {
-              hp: "HP", san: "SAN", mov: "MOV",
-              db: "伤害加值", build: "体格", armor: "护甲"
-            };
+            if (val == null) return null;
+            const label = STATUS_LABELS[key];
+            if (!label) return null;
             const maxVal = character.initialStatus?.[key] ?? null;
             const pct = maxVal && typeof val === "number" && maxVal > 0 ? Math.round((val / maxVal) * 100) : null;
             const barColor = key === "hp" ? (pct != null && pct <= 25 ? "var(--danger)" : "var(--accent)")
@@ -205,7 +204,7 @@ export function CharacterCardView({
               : null;
             return (
               <div key={key} className="status-chip">
-                <span className="status-chip__label">{labels[key] || key.toUpperCase()}</span>
+                <span className="status-chip__label">{label}</span>
                 <span className="status-chip__value">
                   {maxVal != null ? maxVal + " / " : ""}{val}
                 </span>
@@ -239,31 +238,38 @@ export function CharacterCardView({
         </div>
 
       <div className="character-card__split">
-        <div>
-          <h3>技能预览</h3>
+        <div className="char-card__section">
+          <h4>技能 ({character.skills.filter(s => s.value != null).length})</h4>
           <div className="skill-search-wrap">
             <input
               className="skill-search-input"
-              placeholder="????..."
+              placeholder="搜索技能..."
               value={skillSearch}
               onChange={(e) => setSkillSearch(e.target.value)}
             />
           </div>
-          <div className="skill-list">
+          <div className="char-card__skills">
             {visibleSkills.map((skill) => (
-              <button
-                disabled={!canRoll || !skill.value}
+              <div
                 key={`${skill.name}-${skill.value}`}
-                onClick={() => skill.value && onRoll(`${name} · ${skill.name}`, skill.value)}
-                type="button"
+                className="char-card__skill"
+                onClick={() => skill.value && canRoll && onRoll(`${name} · ${skill.name}`, skill.value)}
+                title={skill.value ? `${skill.name} 常规 ${skill.value} / 困难 ${skill.half ?? "?"} / 极难 ${skill.fifth ?? "?"}` : undefined}
+                style={{ cursor: canRoll && skill.value ? "pointer" : "default", opacity: skill.value ? 1 : 0.4 }}
               >
-                {skill.name} {skill.value ?? "?"}
-              </button>
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px", flex: 1, minWidth: 0 }}>
+                  <span className="char-card__skill-name">{skill.name}</span>
+                  <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                    困难 {skill.half ?? "?"} · 极难 {skill.fifth ?? "?"}
+                  </span>
+                </div>
+                <span className="char-card__skill-val">{skill.value ?? "?"}</span>
+              </div>
             ))}
           </div>
           {!skillSearch && !showAllSkills && character.skills.filter((s) => s.value != null).length > 24 && (
-            <button className="text-button" onClick={() => setShowAllSkills(true)} type="button">
-              ??????
+            <button className="text-button" onClick={() => setShowAllSkills(true)} type="button" style={{ marginTop: "8px", width: "100%" }}>
+              显示全部 ({character.skills.filter(s => s.value != null).length})
             </button>
           )}
         </div>

@@ -24,7 +24,7 @@ def register(body: RegisterRequest):
         user = create_user(body.username, body.password, body.display_name)
     except Exception:
         return JSONResponse({"error": "Username already taken"}, status_code=409)
-    token = create_token(user["id"], user["username"])
+    token = create_token(user["id"], user["username"], user.get("is_admin", False))
     return {"user": UserResponse(**user).model_dump(), "token": token}
 
 
@@ -33,7 +33,7 @@ def login(body: LoginRequest):
     user = authenticate(body.username, body.password)
     if user is None:
         return JSONResponse({"error": "Invalid username or password"}, status_code=401)
-    token = create_token(user["id"], user["username"])
+    token = create_token(user["id"], user["username"], user.get("is_admin", False))
     return {"user": UserResponse(**user).model_dump(), "token": token}
 
 
