@@ -21,14 +21,22 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
         self.path = path
         self.data_dir = path.parent
         self._lock = RLock()
+        self._db_was_unavailable = False
         self._state = self._load()
 
     def _get_db(self):
         """Return SQLite connection if initialized, else None (fallback to JSON)."""
         try:
             from app.core.db import get_db
-            return get_db()
+            db = get_db()
+            if self._db_was_unavailable and db is not None:
+                self._db_was_unavailable = False
+                sqlite_state = self._load_from_sqlite(db)
+                if sqlite_state.get("rooms"):
+                    self._state = sqlite_state
+            return db
         except RuntimeError:
+            self._db_was_unavailable = True
             return None
 
     def create_room(self, name: str, keeper_name: str, password: str | None = None, theme: str = "black") -> tuple[dict, str]:

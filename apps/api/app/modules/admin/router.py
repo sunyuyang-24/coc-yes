@@ -97,7 +97,18 @@ async def admin_leave_room(user_id: str, room_id: str, request: Request):
 @router.post("/admin/rooms/{room_id}/delete")
 async def admin_delete_room(room_id: str, request: Request):
     require_admin(request)
-    deleted = store.delete_room(room_id)
-    if not deleted:
+    # Try in-memory store first (also cleans SQLite via _purge_room_from_sqlite)
+    if store.delete_room(room_id):
+        return {"deleted": True}
+    # Room may exist only in SQLite (created before this server session)
+    db = get_db()
+    row = db.execute("SELECT id FROM rooms WHERE id = ?", (room_id,)).fetchone()
+    if row is None:
         return JSONResponse({"error": "Room not found"}, status_code=404)
+    with db:
+        db.execute("DELETE FROM dice_rolls WHERE room_id = ?", (room_id,))
+        db.execute("DELETE FROM characters WHERE room_id = ?", (room_id,))
+        db.execute("DELETE FROM messages WHERE room_id = ?", (room_id,))
+        db.execute("DELETE FROM room_members WHERE room_id = ?", (room_id,))
+        db.execute("DELETE FROM rooms WHERE id = ?", (room_id,))
     return {"deleted": True}
