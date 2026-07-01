@@ -26,7 +26,8 @@ import { getToken } from "./auth";
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  if (!headers.has("Content-Type")) {
+  const method = (init?.method || "GET").toUpperCase();
+  if (!headers.has("Content-Type") && method !== "GET" && method !== "HEAD" && !(init?.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
 

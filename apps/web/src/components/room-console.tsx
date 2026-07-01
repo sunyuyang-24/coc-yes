@@ -256,11 +256,18 @@ export function RoomConsole() {
     if (!room || !memberId || !characterFile) return; const body = new FormData();
     body.append("ownerId", memberId); body.append("file", characterFile);
     try {
-      const response = await fetch(apiUrl(`/api/rooms/${room.id}/characters/upload`), { method: "POST", body });
-      if (!response.ok) { const errText = await response.text(); alert(`上传失败: ${errText}`); return; }
+      const response = await apiRequest<{ character: Record<string, unknown> }>(
+        `/api/rooms/${room.id}/characters/upload`,
+        { method: "POST", body, headers: {} }
+      );
+      if (!response.character) { alert("上传失败: 服务器返回异常"); return; }
       const detail = await apiRequest<RoomOnlyResponse>(`/api/rooms/${room.id}?member_id=${encodeURIComponent(memberId!)}`); setRoom(detail.room);
       setCharacterFile(null);
-    } catch (err) { alert(`上传角色卡出错: ${err instanceof Error ? err.message : "网络错误"}`); } }
+      const fileInput = document.getElementById("character-file-input") as HTMLInputElement | null;
+      if (fileInput) fileInput.value = "";
+    } catch (err) { alert(`上传角色卡出错: ${err instanceof Error ? err.message : "网络错误"}`); setCharacterFile(null);
+      const fileInput = document.getElementById("character-file-input") as HTMLInputElement | null;
+      if (fileInput) fileInput.value = ""; } }
   const [showKpLeaveConfirm, setShowKpLeaveConfirm] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [deleteMsgId, setDeleteMsgId] = useState<string | null>(null);

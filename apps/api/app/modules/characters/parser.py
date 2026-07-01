@@ -51,8 +51,11 @@ BACKGROUND_REFS = {
 
 
 def parse_character_card(content: bytes, filename: str) -> dict:
-    workbook = XlsxReader(content)
+    with XlsxReader(content) as workbook:
+        return _parse_card(workbook, filename)
 
+
+def _parse_card(workbook: XlsxReader, filename: str) -> dict:
     if "人物卡" not in workbook.sheets:
         raise ValueError("Workbook does not contain a 人物卡 sheet")
 
