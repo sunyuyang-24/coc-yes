@@ -46,7 +46,18 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
 
     if (!response.ok) {
       const errorText = await response.text();
-      const err = Object.assign(new Error(errorText || `HTTP ${response.status}`), { status: response.status });
+      let message = errorText || `HTTP ${response.status}`;
+      try {
+        const json = JSON.parse(errorText);
+        if (typeof json.detail === "string") {
+          message = json.detail;
+        } else if (json.message) {
+          message = json.message;
+        }
+      } catch {
+        // 不是 JSON，保留原始文本
+      }
+      const err = Object.assign(new Error(message), { status: response.status });
       throw err;
     }
 

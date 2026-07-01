@@ -22,21 +22,34 @@ type RoomOnlyResponse = { room: RoomDetail };
 type SocketEvent = { type: "room_state" | "room_update"; room: RoomDetail };
 const STORAGE_KEY = "coc-yes.current-session";
 const DICE_PREFS_KEY = "coc-yes.dice-prefs";
+const DICE_SOUND_PATHS = {
+  roll: "/sounds/roll-of-dice.mp3",
+  success: "/sounds/success.wav",
+  critical: "/sounds/critical.wav",
+  failure: "/sounds/failure.wav",
+  fumble: "/sounds/fumble.wav",
+} as const;
 
-let _audioCtx: AudioContext | null = null;
-function _getAudioCtx(): AudioContext | null {
-  if (_audioCtx) return _audioCtx;
-  try { _audioCtx = new AudioContext(); } catch { /* init */ }
-  return _audioCtx;
+function playAudio(src: string, onEnded?: () => void): void {
+  try {
+    const audio = new Audio(src);
+    audio.preload = "auto";
+    if (onEnded) audio.addEventListener("ended", onEnded, { once: true });
+    void audio.play().catch(() => { /* Browser may block audio before user interaction. */ });
+  } catch { /* ignore unsupported audio playback */ }
 }
-function playDiceSound() {
-  const ctx = _getAudioCtx(); if (!ctx) return;
-  try { ctx.resume().then(() => { const now = ctx.currentTime;
-    for (let i = 0; i < 3; i++) { const osc = ctx.createOscillator(); const gain = ctx.createGain();
-      osc.type = "triangle"; osc.frequency.setValueAtTime(800 + Math.random() * 400, now + i * 0.06);
-      osc.frequency.exponentialRampToValueAtTime(200, now + i * 0.06 + 0.08);
-      gain.gain.setValueAtTime(0.15, now + i * 0.06); gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.1);
-      osc.connect(gain); gain.connect(ctx.destination); osc.start(now + i * 0.06); osc.stop(now + i * 0.06 + 0.1); } }); } catch { /* ignore */ }
+
+function playDiceSound(roll: DiceRollResult): void {
+  const resultSound = roll.successLevel === "critical"
+    ? DICE_SOUND_PATHS.critical
+    : roll.successLevel === "fumble"
+      ? DICE_SOUND_PATHS.fumble
+      : roll.successLevel === "failure"
+        ? DICE_SOUND_PATHS.failure
+        : roll.successLevel
+          ? DICE_SOUND_PATHS.success
+          : null;
+  playAudio(DICE_SOUND_PATHS.roll, resultSound ? () => playAudio(resultSound) : undefined);
 }
 function isNpcChar(c: CharacterCard): boolean {
   return !!(c.isNpc) || (c.sourceFileName || "").startsWith("npc");
@@ -116,6 +129,7 @@ export function RoomConsole() {
   const [dragOver, setDragOver] = useState(false);
   const [viewingFile, setViewingFile] = useState<{ url: string; filename: string; contentType: string } | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const seenRollIdsRef = useRef<Set<string>>(new Set());
   const currentMember = useMemo(() => room?.members.find((m) => m.id === memberId) ?? null, [memberId, room?.members]);
   useEffect(() => { if (room?.roomTheme) document.documentElement.dataset.background = room.roomTheme; }, [room?.roomTheme]);
   useEffect(() => { const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -135,7 +149,17 @@ export function RoomConsole() {
       socket.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data) as SocketEvent;
-          if (payload.type === "room_state" || payload.type === "room_update") setRoom(payload.room);
+          const rolls = payload.room.rolls ?? [];
+          if (payload.type === "room_state") {
+            seenRollIdsRef.current = new Set(rolls.map((roll) => roll.id));
+          } else {
+            const newRolls = rolls.filter((roll) => !seenRollIdsRef.current.has(roll.id));
+            rolls.forEach((roll) => seenRollIdsRef.current.add(roll.id));
+            if (loadSettings().diceSound !== false) {
+              newRolls.forEach((roll) => playDiceSound(roll));
+            }
+          }
+          setRoom(payload.room);
         } catch (err) {
           console.error("Invalid WebSocket message:", err);
         }
@@ -213,13 +237,13 @@ export function RoomConsole() {
         hidden: hiddenRoll && currentMember?.role === "keeper",
         asCharacterId: (isKeeper && asCharacterId) || undefined }) });
     try { window.localStorage.setItem(DICE_PREFS_KEY, JSON.stringify({ targetValue: tv ?? 60, expression,
-      bonusPenalty: Number(bonusPenalty) })); } catch { /* ignore */ } if (loadSettings().diceSound !== false) playDiceSound(); }
+      bonusPenalty: Number(bonusPenalty) })); } catch { /* ignore */ } }
     catch { setNotice("投骰失败，请检查网络连接"); } }
   async function rollCharacterCheck(label: string, targetValue: number, bonusPenalty?: number) {
     if (!room || !memberId) return;
     try { await apiRequest(`/api/rooms/${room.id}/rolls`, { method: "POST",
       body: JSON.stringify({ rollerId: memberId, expression: "1d100", label, targetValue,
-        bonusPenalty: bonusPenalty ?? 0 }) }); if (loadSettings().diceSound !== false) playDiceSound(); }
+        bonusPenalty: bonusPenalty ?? 0 }) }); }
     catch { setNotice("投骰失败，请检查网络连接"); } }
   async function updateCharacter(characterId: string, basic: Record<string, string>,
     attributes: Array<{ key: string; value: number | null }>, keeperNotes: string,
@@ -337,8 +361,7 @@ export function RoomConsole() {
     const charId = isKeeper ? kpCheckCharId : myChar?.id;
     if (!charId) return;
     await apiRequest(`/api/rooms/${room.id}/rolls/check`, { method: "POST",
-      body: JSON.stringify({ characterId: charId, [type === "skill" ? "skillName" : "attributeKey"]: name, difficulty, hidden }) });
-    if (loadSettings().diceSound !== false) playDiceSound(); }
+      body: JSON.stringify({ characterId: charId, [type === "skill" ? "skillName" : "attributeKey"]: name, difficulty, hidden }) }); }
   async function startCombat() { if (!room || !memberId) return;
     const form = new FormData(); form.append("editorId", memberId);
     try { await fetch(apiUrl(`/api/rooms/${room.id}/combat/start`), { method: "POST", body: form }); }

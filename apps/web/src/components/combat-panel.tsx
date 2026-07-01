@@ -56,6 +56,7 @@ export function CombatPanel({
   roomId, memberId, combat, characters, isKeeper, onClose,
 }: Props) {
   const [busy, setBusy] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const charMap = useMemo(
     () => new Map(characters.map(c => [c.id, c])),
@@ -105,16 +106,25 @@ export function CombatPanel({
   }
 
   function patchDefense(key: string, patch: Partial<DefenseDraft>) {
-    setDefenses(prev => ({
-      ...prev,
-      [key]: { ...prev[key], ...patch },
-    }));
+    setDefenses(prev => {
+      const base = prev[key] ?? {
+        intentId: "",
+        defenderCharacterId: "",
+        defenseType: "none" as const,
+        weaponIndex: null,
+      };
+      return {
+        ...prev,
+        [key]: { ...base, ...patch },
+      };
+    });
   }
 
   // --- Actions ---
 
   async function submitDeclarations() {
     if (busy) return;
+    setErrorMsg(null);
     setBusy(true);
     try {
       const body: Array<{
@@ -123,11 +133,23 @@ export function CombatPanel({
         weaponIndex?: number;
         targetCharacterIds: string[];
       }> = [];
+      let downgradedToSkip = 0;
       for (const p of participants) {
         if (isInvalidCombatant(p)) continue;
         if (!canEditFor(p)) continue;
         const d = drafts[p.characterId];
         if (!d) continue;
+        // 未选目标的攻击/战技 → 转换为 skip，避免"一名 NPC 未配置目标就
+        // 导致整批声明失败"的情况；同时保留有目标配置的 NPC 声明。
+        if (d.actionType !== "skip" && !d.targetCharacterId) {
+          body.push({
+            characterId: p.characterId,
+            actionType: "skip",
+            targetCharacterIds: [],
+          });
+          downgradedToSkip += 1;
+          continue;
+        }
         body.push({
           characterId: p.characterId,
           actionType: d.actionType,
@@ -135,13 +157,27 @@ export function CombatPanel({
           targetCharacterIds: d.targetCharacterId ? [d.targetCharacterId] : [],
         });
       }
-      if (body.length === 0) return;
+      if (body.length === 0) {
+        setErrorMsg("尚未选择任何行动。请为可行动的角色声明行动。");
+        return;
+      }
+      // 若提交内容全部都是 skip（包括被降级的），告诉用户至少声明一个
+      // 实际行动；但仍然允许提交一个空 body 以外的混合集合。
+      if (body.every((b) => b.actionType === "skip")) {
+        setErrorMsg(
+          downgradedToSkip > 0
+            ? `有 ${downgradedToSkip} 个角色未选目标，已被自动转为跳过；请至少为一名角色声明真实行动（攻击/战技 + 目标）。`
+            : "所有声明均为跳过。请至少声明一条非跳过行动。",
+        );
+        return;
+      }
       await apiRequest(`/api/rooms/${roomId}/combat/declare`, {
         method: "POST",
         body: JSON.stringify({ memberId, declarations: body }),
       });
     } catch (err) {
-      console.error("declaration failed:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMsg(`声明失败：${message}`);
     } finally {
       setBusy(false);
     }
@@ -149,6 +185,7 @@ export function CombatPanel({
 
   async function submitLock() {
     if (busy || !isKeeper) return;
+    setErrorMsg(null);
     setBusy(true);
     try {
       await apiRequest(`/api/rooms/${roomId}/combat/lock`, {
@@ -156,7 +193,8 @@ export function CombatPanel({
         body: JSON.stringify({ editorId: memberId }),
       });
     } catch (err) {
-      console.error("lock combat intents failed:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMsg(`锁定失败：${message}`);
     } finally {
       setBusy(false);
     }
@@ -164,16 +202,21 @@ export function CombatPanel({
 
   async function submitDefenses() {
     if (busy) return;
+    setErrorMsg(null);
     setBusy(true);
     try {
       const defArr = Object.values(defenses);
-      if (defArr.length === 0) return;
+      if (defArr.length === 0) {
+        setErrorMsg("尚未选择任何防守反应。");
+        return;
+      }
       await apiRequest(`/api/rooms/${roomId}/combat/defense`, {
         method: "POST",
         body: JSON.stringify({ memberId, defenses: defArr }),
       });
     } catch (err) {
-      console.error("defense submit failed:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMsg(`防守提交失败：${message}`);
     } finally {
       setBusy(false);
     }
@@ -181,6 +224,7 @@ export function CombatPanel({
 
   async function submitResolve() {
     if (busy || !isKeeper) return;
+    setErrorMsg(null);
     setBusy(true);
     try {
       await apiRequest(`/api/rooms/${roomId}/combat/resolve`, {
@@ -188,7 +232,8 @@ export function CombatPanel({
         body: JSON.stringify({ editorId: memberId }),
       });
     } catch (err) {
-      console.error("resolve failed:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMsg(`结算失败：${message}`);
     } finally {
       setBusy(false);
     }
@@ -196,6 +241,7 @@ export function CombatPanel({
 
   async function submitNextRound() {
     if (busy || !isKeeper) return;
+    setErrorMsg(null);
     setBusy(true);
     try {
       await apiRequest(`/api/rooms/${roomId}/combat/next_round`, {
@@ -203,7 +249,8 @@ export function CombatPanel({
         body: JSON.stringify({ editorId: memberId }),
       });
     } catch (err) {
-      console.error("next_round failed:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMsg(`进入下一轮失败：${message}`);
     } finally {
       setBusy(false);
     }
@@ -212,6 +259,7 @@ export function CombatPanel({
   async function endCombat() {
     if (busy || !isKeeper) return;
     if (!confirm("确认结束这场战斗？")) return;
+    setErrorMsg(null);
     setBusy(true);
     try {
       await apiRequest(`/api/rooms/${roomId}/combat/end`, {
@@ -220,7 +268,8 @@ export function CombatPanel({
       });
       onClose();
     } catch (err) {
-      console.error("end failed:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMsg(`结束失败：${message}`);
     } finally {
       setBusy(false);
     }
@@ -238,6 +287,17 @@ export function CombatPanel({
     }
     return map;
   }, [participants]);
+
+  // 至少有一个声明不是“跳过”；仅用于禁用无意义按钮。
+  const declarationHidesAction = useMemo(() => {
+    const editable = participants.filter(
+      (p) => !isInvalidCombatant(p) && canEditFor(p),
+    );
+    if (editable.length === 0) return true;
+    return editable.every(
+      (p) => drafts[p.characterId]?.actionType === "skip",
+    );
+  }, [drafts, participants]);
 
   // --- Render ---
 
@@ -257,6 +317,22 @@ export function CombatPanel({
             ✕
           </button>
         </div>
+
+        {errorMsg && (
+          <div
+            style={{
+              marginTop: "12px",
+              padding: "8px 10px",
+              borderRadius: "6px",
+              background: "var(--danger-bg, #fde8e8)",
+              color: "var(--danger-fg, #c53030)",
+              border: "1px solid var(--danger-border, #fc8181)",
+              fontSize: "13px",
+            }}
+          >
+            {errorMsg}
+          </div>
+        )}
 
         <div className="combat__participants">
           {participants.map((p) => {
@@ -396,7 +472,7 @@ export function CombatPanel({
               <button
                 className="button button--primary button--sm"
                 onClick={submitDeclarations}
-                disabled={busy}
+                disabled={busy || declarationHidesAction}
                 type="button"
               >
                 {busy ? "提交中..." : "提交声明"}
@@ -405,7 +481,7 @@ export function CombatPanel({
                 <button
                   className="button button--ghost button--sm"
                   onClick={submitLock}
-                  disabled={busy}
+                  disabled={busy || declarationHidesAction}
                   type="button"
                   title="锁定本轮声明并进入防守/结算阶段"
                 >
@@ -471,7 +547,11 @@ export function CombatPanel({
                           value={def.defenseType}
                           disabled={!ownControl}
                           onChange={(e) =>
-                            patchDefense(defKey, { defenseType: e.target.value as DefenseDraft["defenseType"] })
+                            patchDefense(defKey, {
+                              intentId: it.intentId,
+                              defenderCharacterId: t.characterId,
+                              defenseType: e.target.value as DefenseDraft["defenseType"],
+                            })
                           }
                         >
                           <option value="none">无反应（对方直接掷骰）</option>
@@ -484,8 +564,12 @@ export function CombatPanel({
                             value={def.weaponIndex ?? 0}
                             disabled={!ownControl}
                             onChange={(e) =>
-                              patchDefense(defKey, { weaponIndex: Number(e.target.value) })
-                            }
+                            patchDefense(defKey, {
+                              intentId: it.intentId,
+                              defenderCharacterId: t.characterId,
+                              weaponIndex: Number(e.target.value),
+                            })
+                          }
                             style={{ marginLeft: "8px" }}
                           >
                             {tweapons.map((w, i) => (

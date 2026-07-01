@@ -61,7 +61,7 @@ async def declare_combat_intents(
         combat_state = store.declare_combat_intents(
             room_id,
             payload.member_id,
-            [declaration.model_dump() for declaration in payload.declarations],
+            [declaration.model_dump(by_alias=True) for declaration in payload.declarations],
         )
         await _broadcast_room(room_id)
         return {"combatState": combat_state}
@@ -91,7 +91,7 @@ async def declare_combat_defenses(
         combat_state = store.declare_combat_defenses(
             room_id,
             payload.member_id,
-            [defense.model_dump() for defense in payload.defenses],
+            [defense.model_dump(by_alias=True) for defense in payload.defenses],
         )
         await _broadcast_room(room_id)
         return {"combatState": combat_state}

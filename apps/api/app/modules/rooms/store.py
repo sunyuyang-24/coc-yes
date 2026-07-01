@@ -217,7 +217,18 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
             self._save()
             return deepcopy(message)
 
-    def add_dice_roll(self, room_id: str, roller_id: str, roll: dict, as_character_id: str | None = None) -> dict:
+    def add_dice_roll(self, room_id: str, roller_id: str, roll: dict,
+                       as_character_id: str | None = None,
+                       *, commit_immediately: bool = True) -> dict:
+        """Append a dice roll to the room.
+
+        When `commit_immediately=True` (default), the roll and its chat
+        message are persisted to the database with `_save()` as part of
+        this call. Pass `commit_immediately=False` when batching several
+        changes (rolls + messages + HP updates) into a single `_save()`
+        at the end — the caller is then responsible for invoking
+        `self._save()` after all in-memory updates are assembled.
+        """
         with self._lock:
             room = self._require_room(room_id)
             roller = self._find_member(room, roller_id)
@@ -256,7 +267,8 @@ class RoomStore(CombatMixin, ChaseMixin, NpcMixin):
 
             room.setdefault("rolls", []).append(roll_record)
             room["messages"].append(message)
-            self._save()
+            if commit_immediately:
+                self._save()
 
             return deepcopy(roll_record)
 

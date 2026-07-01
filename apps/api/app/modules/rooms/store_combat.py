@@ -455,399 +455,679 @@ class CombatMixin:
     def lock_combat_intents(self, room_id: str, editor_id: str) -> dict:
         """KP-only: move combat from declaration to resolution phase.
 
-        This is the single gate that opens up defense submission and
-        `resolve_all_combat` to the UI. A round without any declared intents
-        can still be locked (nothing to resolve).
+        Rejects when no intents have been declared at all (would be a no-op
+        resolve). KP-controlled participants without a declaration are
+        automatically submitted as "skip" so the round can still advance.
+
+        The auto-generated skips are assembled in a local list and only
+        committed to cs.intents if validation succeeds, so a failed lock
+        does not pollute the combat state.
         """
         with self._lock:
             room = self._require_room(room_id)
             cs = room.get("combatState")
             if not cs or not cs.get("active"):
                 raise ValueError("没有进行中的战斗")
-            self._require_keeper(room, editor_id, "lock combat intents")
+            keeper = self._require_keeper(room, editor_id, "lock combat intents")
             if cs["phase"] != "declaration":
                 raise ValueError("当前不在声明阶段")
+
+            existing_intents: list[dict] = list(cs.get("intents", []) or [])
+            existing_by_char = {
+                it["attackerCharacterId"]: it for it in existing_intents
+            }
+
+            # Auto-skip for every KP-controlled participant that lacks a
+            # declaration (NPCs + KP's own character card). Collected in a
+            # LOCAL list so validation failure does not mutate cs.
+            auto_skips: list[dict] = []
+            for p in cs.get("participants", []):
+                if p["characterId"] in existing_by_char:
+                    continue
+                if p["status"] in ("unconscious", "dying", "dead"):
+                    continue
+                if p["controllerMemberId"] == keeper["id"]:
+                    auto_skips.append({
+                        "intentId": uuid.uuid4().hex[:12],
+                        "attackerCharacterId": p["characterId"],
+                        "actionType": "skip",
+                        "weaponIndex": None,
+                        "targetCharacterIds": [],
+                        "resolved": False,
+                    })
+
+            # After auto-skip, require at least one non-skip intent. The
+            # check is still done on the concatenated lists, but mutation
+            # of cs.intents is deferred until validation passes.
+            combined = existing_intents + auto_skips
+            non_skip = [it for it in combined if it.get("actionType") != "skip"]
+            if not non_skip:
+                raise ValueError(
+                    "没有有效的非跳过声明。请至少声明一条行动（攻击/战技）。"
+                )
+
+            # Validation succeeded — commit the auto-skips and change phase.
+            cs["intents"] = combined
+            auto_added = len(auto_skips)
             cs["phase"] = "resolution"
-            self._add_system_message(
-                room,
-                f"⚔️ Round {cs['roundNumber']}：KP 已锁定声明，进入防守/结算阶段。"
-            )
+            if auto_added:
+                self._add_system_message(
+                    room,
+                    f"⚔️ Round {cs['roundNumber']}：KP 已锁定声明（自动跳过 {auto_added} 个未声明的 KP 角色），进入防守/结算阶段。"
+                )
+            else:
+                self._add_system_message(
+                    room,
+                    f"⚔️ Round {cs['roundNumber']}：KP 已锁定声明，进入防守/结算阶段。"
+                )
             self._save()
             return deepcopy(cs)
 
     def resolve_all_combat(self, room_id: str, editor_id: str) -> dict:
-        """Resolve all declared intents in order. Keeper only.
+        """Resolve all declared intents and persist dice to chat.
 
-        Intents are sorted by the attacker's DEX (descending). For each
-        (attacker, defender) pair a defense is looked up: if not present
-        it defaults to "none". When a defender already used a reaction
-        against a previous attacker this round, every subsequent attacker
-        targeting them gets +1 bonus die ("寡不敌众").
+        The method is atomic with respect to the room: a deep snapshot of
+        the room dict is taken at the top of the critical section, and
+        only in-memory updates happen during the resolution loop. After
+        every intent has been resolved the entire batch is committed to
+        the database with a single `_save()` call. If an exception is
+        raised anywhere in the middle, the in-memory state is reverted
+        to the snapshot and the exception is re-raised — this prevents
+        half-written rolls / HP changes from leaking into the chat if a
+        later roll or persistence step fails.
 
-        Damage rules:
-        - normal hit: roll(weapon) + DB (integers for known positive/
-          zero values, else a d6-style roll).
-        - extreme success, non-impale weapon: max(weapon) + DB (no
-          extra roll).
-        - impale on impaling weapon (critical or extreme success):
-          max(weapon) + max(DB) + another rolled weapon damage.
-        - armor reduces damage after bonuses are applied.
-        Status transitions see `_apply_damage` below.
+        Extreme successes and impales report max-value logic via textual
+        annotation instead of persisting a roll that does not contribute
+        to the final damage total, so the dice shown in the main chat
+        always match the applied damage.
+
+        A short summary message (damage dealt / HP remaining / status
+        transition) is appended to the room chat for every resolved
+        target so KP and players can see the outcome without opening
+        the combat panel.
         """
+        from copy import deepcopy as _deepcopy
         from app.modules.dice.roller import roll_dice
 
         with self._lock:
             room = self._require_room(room_id)
-            cs = room.get("combatState")
-            if not cs or not cs.get("active"):
-                raise ValueError("没有进行中的战斗")
 
-            self._require_keeper(room, editor_id, "resolve combat")
+            # ── Snapshot for rollback ────────────────────────────
+            # `room` is a reference to the in-memory state kept by
+            # RoomStore (and returned to callers elsewhere). Take a
+            # deep copy now so any partial mutation can be reverted
+            # cleanly if resolution aborts.
+            snapshot = _deepcopy(room)
 
-            if cs["phase"] != "resolution":
-                raise ValueError(
-                    "必须先由 KP 锁定声明进入结算阶段，才能执行结算"
-                )
+            try:
+                cs = room.get("combatState")
+                if not cs or not cs.get("active"):
+                    raise ValueError("没有进行中的战斗")
 
-            participants_by_id = {p["characterId"]: p for p in cs["participants"]}
-            defenses_map = {(d["intentId"], d["defenderCharacterId"]): d
-                            for d in cs.get("defenses", [])}
+                self._require_keeper(room, editor_id, "resolve combat")
 
-            def _attacker_dex(it: dict) -> int:
-                p = participants_by_id.get(it.get("attackerCharacterId"))
-                return (p or {}).get("dex", 0)
-
-            # (Re)sort intents by attacker DEX descending. We do NOT reset
-            # `resolved` to False here — repeated `resolve_all_combat`
-            # calls are idempotent: intents already marked resolved are
-            # skipped, so defenders do not take damage a second time.
-            ordered_intents = sorted(
-                cs["intents"], key=_attacker_dex, reverse=True
-            )
-
-            # Per-defender reaction consumption: once a defender has used
-            # any non-"none" reaction against an attacker, every subsequent
-            # attacker targeting them gets +1 bonus die.
-            defender_reacted: set[str] = set()
-
-            # Attach a stable "order" to each intent so tests/logs can
-            # inspect DEX ordering without relying on Python dict order.
-            for idx, it in enumerate(ordered_intents):
-                it["resolveOrder"] = idx
-                # NOTE: we deliberately do NOT reset `resolved` here.
-
-            new_logs: list[dict] = []
-
-            for intent in ordered_intents:
-                # Idempotent: never re-resolve an already resolved intent
-                # (would double-roll / double-damage defenders).
-                if intent.get("resolved"):
-                    continue
-                if intent["actionType"] == "skip":
-                    intent["resolved"] = True
-                    continue
-                attacker = participants_by_id[intent["attackerCharacterId"]]
-                if attacker is None:
-                    intent["resolved"] = True
-                    continue
-                if attacker["status"] in ("unconscious", "dying", "dead"):
-                    intent["resolved"] = True
-                    continue
-
-                attacker_char = self._find_character(
-                    room, intent["attackerCharacterId"]
-                )
-                weapon = _get_weapon(attacker_char, intent.get("weaponIndex"))
-                attack_skill = _get_weapon_skill_value(attacker_char, weapon)
-
-                target_ids = intent.get("targetCharacterIds") or []
-                for target_id in target_ids:
-                    target = participants_by_id.get(target_id)
-                    if target is None:
-                        continue
-                    if target["status"] in ("unconscious", "dying", "dead"):
-                        continue
-
-                    # Outnumber bonus: after the defender has used any
-                    # reaction earlier this round, give +1 bonus die to
-                    # subsequent attackers targeting that defender.
-                    bonus_penalty = 1 if target_id in defender_reacted else 0
-
-                    # Maneuver build penalty
-                    if intent["actionType"] == "melee_maneuver":
-                        build_diff = attacker["build"] - target["build"]
-                        if build_diff <= -3:
-                            self._add_combat_log(
-                                cs, intent, attacker, target,
-                                None, None, "maneuver",
-                                damage_rolled=None, armor_used=None,
-                                damage_after_armor=None,
-                                impale=False, major_wound=False,
-                                status_changed=None,
-                                text=(
-                                    f"{attacker['displayName']} 的 Build 太低，"
-                                    f"无法对 {target['displayName']} 使用战技。"
-                                ),
-                                new_logs=new_logs,
-                            )
-                            continue
-                        if build_diff < 0:
-                            bonus_penalty += build_diff  # negative = penalty
-
-                    defense = defenses_map.get((intent["intentId"], target_id))
-                    target_char = self._find_character(room, target_id)
-                    defense_type = (
-                        defense["defenseType"] if defense else "none"
-                    )
-                    defense_weapon_idx = (
-                        defense.get("weaponIndex") if defense else None
+                if cs["phase"] != "resolution":
+                    raise ValueError(
+                        "必须先由 KP 锁定声明进入结算阶段，才能执行结算"
                     )
 
-                    # Mark reaction as used — any non-"none" defense on
-                    # this specific attacker is considered a reaction.
-                    if defense_type in ("dodge", "fight_back", "maneuver"):
-                        defender_reacted.add(target_id)
+                round_num = cs["roundNumber"]
+                participants_by_id = {
+                    p["characterId"]: p for p in cs["participants"]
+                }
+                defenses_map = {(d["intentId"], d["defenderCharacterId"]): d
+                                for d in cs.get("defenses", [])}
 
-                    is_hit: bool = False
-                    attack_roll = roll_dice(
-                        "1d100", target_value=attack_skill,
+                # ── in-memory roll accumulator ─────────────────────
+                # Each entry: (character_id, roll_dict). Rolls are
+                # flushed to `room["rolls"]` / `room["messages"]`
+                # only after the full resolution completes — using
+                # `add_dice_roll(commit_immediately=False)` so the
+                # database write is deferred to the single final
+                # `_save()` at the bottom.
+                pending_rolls: list[tuple[str, dict]] = []
+
+                def _roll_for(character_id: str, expression: str, label: str,
+                              target_value: int | None = None,
+                              bonus_penalty: int = 0) -> dict:
+                    """Roll dice, append to pending list, return roll."""
+                    roll = roll_dice(
+                        expression,
+                        target_value=target_value,
                         bonus_penalty=bonus_penalty,
+                        label=label,
                     )
-                    attack_ok = _roll_succeeded(attack_roll)
-                    attack_success_level = attack_roll.get("successLevel")
-                    log_defense_roll: dict | None = None
-                    counter_dmg_target: int = 0
-                    is_impale = False
-                    damage_rolled: int | None = None
-                    damage_after: int | None = None
-                    major_w = False
-                    status_changed: dict | None = None
-                    log_text: str = ""
+                    pending_rolls.append((character_id, roll))
+                    return roll
 
-                    if defense_type in ("dodge", "fight_back", "maneuver"):
-                        if defense_type == "dodge":
-                            defense_skill = _get_dodge_value(target_char)
-                        elif defense_type == "fight_back":
-                            def_weapon = _get_weapon(
-                                target_char, defense_weapon_idx
-                            )
-                            defense_skill = _get_weapon_skill_value(
-                                target_char, def_weapon
-                            )
-                        else:  # maneuver
-                            defense_skill = _get_maneuver_resist(target_char)
+                def _attacker_dex(it: dict) -> int:
+                    p = participants_by_id.get(it.get("attackerCharacterId"))
+                    return (p or {}).get("dex", 0)
 
-                        defense_roll = roll_dice(
-                            "1d100", target_value=defense_skill
+                ordered_intents = sorted(
+                    cs["intents"], key=_attacker_dex, reverse=True
+                )
+
+                defender_reacted: set[str] = set()
+
+                for idx, it in enumerate(ordered_intents):
+                    it["resolveOrder"] = idx
+
+                new_logs: list[dict] = []
+
+                for intent in ordered_intents:
+                    if intent.get("resolved"):
+                        continue
+                    if intent["actionType"] == "skip":
+                        intent["resolved"] = True
+                        continue
+                    attacker = participants_by_id[intent["attackerCharacterId"]]
+                    if attacker is None:
+                        intent["resolved"] = True
+                        continue
+                    if attacker["status"] in ("unconscious", "dying", "dead"):
+                        intent["resolved"] = True
+                        continue
+
+                    attacker_char = self._find_character(
+                        room, intent["attackerCharacterId"]
+                    )
+                    weapon = _get_weapon(attacker_char, intent.get("weaponIndex"))
+                    attack_skill = _get_weapon_skill_value(attacker_char, weapon)
+                    attacker_name = attacker["displayName"]
+
+                    target_ids = intent.get("targetCharacterIds") or []
+                    for target_id in target_ids:
+                        target = participants_by_id.get(target_id)
+                        if target is None:
+                            continue
+                        if target["status"] in ("unconscious", "dying", "dead"):
+                            continue
+
+                        target_char = self._find_character(room, target_id)
+                        target_name = target["displayName"]
+
+                        hp_before = target["hp"]
+                        bonus_penalty = 1 if target_id in defender_reacted else 0
+
+                        if intent["actionType"] == "melee_maneuver":
+                            build_diff = attacker["build"] - target["build"]
+                            if build_diff <= -3:
+                                self._add_combat_log(
+                                    cs, intent, attacker, target,
+                                    None, None, "maneuver",
+                                    damage_rolled=None, armor_used=None,
+                                    damage_after_armor=None,
+                                    impale=False, major_wound=False,
+                                    status_changed=None,
+                                    text=(
+                                        f"{attacker_name} 的 Build 太低，"
+                                        f"无法对 {target_name} 使用战技。"
+                                    ),
+                                    new_logs=new_logs,
+                                )
+                                continue
+                            if build_diff < 0:
+                                bonus_penalty += build_diff
+
+                        defense = defenses_map.get((intent["intentId"], target_id))
+                        defense_type = (
+                            defense["defenseType"] if defense else "none"
                         )
-                        log_defense_roll = defense_roll
-                        defense_ok = _roll_succeeded(defense_roll)
+                        defense_weapon_idx = (
+                            defense.get("weaponIndex") if defense else None
+                        )
 
-                        if not attack_ok and not defense_ok:
-                            # Both fail — nothing happens.
-                            log_text = (
-                                f"{attacker['displayName']} 与 "
-                                f"{target['displayName']} 均未命中（双失败）。"
-                            )
-                        else:
-                            winner = _combat_opposed_winner(
-                                attack_roll,
-                                defense_roll,
-                                defense_type,
-                            )
-                            if winner == "actor":
-                                if intent["actionType"] == "melee_maneuver":
-                                    log_text = (
-                                        f"{attacker['displayName']} 战技成功，"
-                                        f"压制 {target['displayName']}！"
-                                    )
-                                else:
-                                    is_hit = True
-                            elif winner == "opponent" and defense_type == "fight_back":
-                                # Defender counter-attack succeeds
+                        if defense_type in ("dodge", "fight_back", "maneuver"):
+                            defender_reacted.add(target_id)
+
+                        is_hit: bool = False
+                        action_label = (
+                            "攻击" if intent["actionType"] == "melee_attack" else "战技"
+                        )
+                        attack_roll = _roll_for(
+                            attacker["characterId"],
+                            "1d100",
+                            label=f"战斗 R{round_num}：{attacker_name} 对 {target_name} 的{action_label}检定",
+                            target_value=attack_skill,
+                            bonus_penalty=bonus_penalty,
+                        )
+                        attack_ok = _roll_succeeded(attack_roll)
+                        attack_success_level = attack_roll.get("successLevel")
+                        log_defense_roll: dict | None = None
+                        counter_dmg_rolled: int | None = None
+                        counter_dmg_after: int | None = None
+                        is_impale = False
+                        damage_rolled: int | None = None
+                        damage_after: int | None = None
+                        major_w = False
+                        status_changed: dict | None = None
+                        log_text: str = ""
+                        log_defense_type = defense_type
+
+                        if defense_type in ("dodge", "fight_back", "maneuver"):
+                            if defense_type == "dodge":
+                                defense_skill = _get_dodge_value(target_char)
+                                defense_label = (
+                                    f"战斗 R{round_num}：{target_name} 闪避检定"
+                                )
+                            elif defense_type == "fight_back":
                                 def_weapon = _get_weapon(
                                     target_char, defense_weapon_idx
                                 )
-                                counter_base_expr = (
-                                    _get_weapon_damage_expr(def_weapon)
+                                defense_skill = _get_weapon_skill_value(
+                                    target_char, def_weapon
                                 )
-                                counter_roll = roll_dice(counter_base_expr)
-                                counter_db_txt = target["db"]
-                                counter_db: int
-                                if counter_db_txt in ("0", "-1", "-2"):
-                                    counter_db = int(counter_db_txt)
-                                elif counter_db_txt and counter_db_txt.lstrip('-').isdigit():
-                                    counter_db = int(counter_db_txt)
-                                else:
-                                    counter_db = (
-                                        roll_dice(counter_db_txt)["total"]
-                                        if counter_db_txt else 0
+                                defense_label = (
+                                    f"战斗 R{round_num}：{target_name} 反击检定"
+                                )
+                            else:
+                                defense_skill = _get_maneuver_resist(target_char)
+                                defense_label = (
+                                    f"战斗 R{round_num}：{target_name} 战技防守检定"
+                                )
+
+                            defense_roll = _roll_for(
+                                target["characterId"],
+                                "1d100",
+                                label=defense_label,
+                                target_value=defense_skill,
+                            )
+                            log_defense_roll = defense_roll
+                            defense_ok = _roll_succeeded(defense_roll)
+
+                            if not attack_ok and not defense_ok:
+                                log_text = (
+                                    f"{attacker_name} 与 {target_name} 均未命中（双失败）。"
+                                )
+                            else:
+                                winner = _combat_opposed_winner(
+                                    attack_roll, defense_roll, defense_type,
+                                )
+                                if winner == "actor":
+                                    if intent["actionType"] == "melee_maneuver":
+                                        log_text = (
+                                            f"{attacker_name} 战技成功，"
+                                            f"压制 {target_name}！"
+                                        )
+                                    else:
+                                        is_hit = True
+                                elif winner == "opponent" and defense_type == "fight_back":
+                                    def_weapon = _get_weapon(
+                                        target_char, defense_weapon_idx
                                     )
-                                counter_raw = counter_roll["total"] + counter_db
-                                counter_final = max(0, counter_raw - attacker["armor"])
-                                counter_dmg_target = counter_final
-                                # apply to attacker
-                                status_changed = self._apply_damage(
-                                    room, cs, attacker, counter_final,
-                                    intent, weapon_kind="counter",
-                                )
-                                log_text = (
-                                    f"{target['displayName']} 反击成功！对 "
-                                    f"{attacker['displayName']} 造成 {counter_final} 点伤害"
-                                )
+                                    counter_expr = _get_weapon_damage_expr(def_weapon)
+                                    counter_roll = _roll_for(
+                                        target["characterId"],
+                                        counter_expr,
+                                        label=f"战斗 R{round_num}：{target_name} 反击伤害",
+                                    )
+                                    counter_db_txt = target["db"]
+                                    counter_db_val: int
+                                    if counter_db_txt in ("0", "-1", "-2"):
+                                        counter_db_val = int(counter_db_txt)
+                                    elif counter_db_txt and counter_db_txt.lstrip('-').isdigit():
+                                        counter_db_val = int(counter_db_txt)
+                                    else:
+                                        db_roll = _roll_for(
+                                            target["characterId"],
+                                            counter_db_txt,
+                                            label=f"战斗 R{round_num}：{target_name} 反击 DB",
+                                        )
+                                        counter_db_val = db_roll["total"]
+                                    counter_raw = counter_roll["total"] + counter_db_val
+                                    counter_final = max(
+                                        0, counter_raw - attacker["armor"]
+                                    )
+                                    counter_dmg_rolled = counter_raw
+                                    counter_dmg_after = counter_final
+                                    attacker_hp_before = attacker["hp"]
+                                    status_changed = self._apply_damage(
+                                        room, cs, attacker, counter_final,
+                                        intent, weapon_kind="counter",
+                                        roll_and_persist=_roll_for,
+                                    )
+                                    log_text = (
+                                        f"{target_name} 反击成功！对 "
+                                        f"{attacker_name} 造成 {counter_final} 点伤害"
+                                    )
+                                    # ── Chat summary: counter-attack ──
+                                    summary_parts = [
+                                        f"⚔️ {attacker_name} 攻击 {target_name} 被反击",
+                                        f"  反击造成 {counter_final} 点伤害 "
+                                        f"（{attacker_name} HP {attacker_hp_before} → {attacker['hp']}/{attacker['hpMax']}）",
+                                    ]
+                                    if status_changed is not None:
+                                        summary_parts.append(
+                                            f"  状态：{status_changed.get('from')} → {status_changed.get('to')}"
+                                        )
+                                    summary_parts.append(f"  说明：{log_text}")
+                                    self._add_system_message(
+                                        room, "\n".join(summary_parts)
+                                    )
+                                else:
+                                    log_text = (
+                                        f"{target_name} 的 {defense_type} 成功"
+                                        f" 防御住了 {attacker_name}"
+                                    )
+                        else:
+                            if attack_ok:
+                                is_hit = True
                             else:
-                                # dodge/maneuver defender win
                                 log_text = (
-                                    f"{target['displayName']} 的 {defense_type} 成功"
-                                    f" 防御住了 {attacker['displayName']}"
+                                    f"{attacker_name} 攻击 {target_name} 未命中 "
+                                    f"({attack_roll['total']}/{attack_skill})"
                                 )
-                    else:
-                        # No reaction: straight hit check
-                        if attack_ok:
-                            is_hit = True
-                        else:
-                            log_text = (
-                                f"{attacker['displayName']} 攻击 "
-                                f"{target['displayName']} 未命中 "
-                                f"({attack_roll['total']}/{attack_skill})"
-                            )
 
-                    if is_hit and intent["actionType"] == "melee_attack":
-                        is_imp = _is_impaling_weapon(weapon)
-                        weapon_expr = _get_weapon_damage_expr(weapon)
-                        db_txt = attacker["db"]
-                        if db_txt in ("0", "-1", "-2"):
-                            db_val = int(db_txt)
-                        elif db_txt and db_txt.lstrip('-').isdigit():
-                            db_val = int(db_txt)
-                        else:
-                            db_val = (
-                                roll_dice(db_txt)["total"] if db_txt else 0
-                            )
-                        is_extreme = attack_success_level in (
-                            "extreme", "critical"
-                        )
-                        if is_extreme and is_imp:
-                            # Impale branch
-                            extra_roll = roll_dice(weapon_expr)["total"]
+                        if is_hit and intent["actionType"] == "melee_attack":
+                            is_imp = _is_impaling_weapon(weapon)
+                            weapon_expr = _get_weapon_damage_expr(weapon)
+                            db_txt = attacker["db"]
                             max_weapon = _max_damage(weapon_expr)
-                            if db_txt in ("0", "-1", "-2"):
-                                max_db = int(db_txt)
+                            max_db = _max_damage(db_txt) if db_txt else 0
+                            is_extreme = attack_success_level in (
+                                "extreme", "critical"
+                            )
+                            raw_dmg: int
+                            if is_extreme and is_imp:
+                                extra_roll = _roll_for(
+                                    attacker["characterId"],
+                                    weapon_expr,
+                                    label=(
+                                        f"战斗 R{round_num}：{attacker_name} "
+                                        f"贯穿额外伤害（武器骰）"
+                                    ),
+                                )
+                                raw_dmg = max_weapon + max_db + extra_roll["total"]
+                                is_impale = True
+                                damage_rolled = raw_dmg
+                                damage_after = max(0, raw_dmg - target["armor"])
+                                major_w = (
+                                    damage_after > 0
+                                    and damage_after * 2 >= target["hpMax"]
+                                )
+                                status_changed = self._apply_damage(
+                                    room, cs, target, damage_after, intent,
+                                    weapon_kind="attack",
+                                    roll_and_persist=_roll_for,
+                                )
+                                log_text = (
+                                    f"{attacker_name} 对 {target_name} "
+                                    f"造成 {damage_after} 点伤害 "
+                                    f"(贯穿！武器取最大 {max_weapon}, "
+                                    f"DB 取最大 {max_db}, "
+                                    f"额外武器骰 {extra_roll['total']}, "
+                                    f"总 {raw_dmg}, 减甲 {target['armor']})"
+                                )
+                            elif is_extreme:
+                                if db_txt in ("0", "-1", "-2"):
+                                    db_val = int(db_txt)
+                                elif db_txt and db_txt.lstrip('-').isdigit():
+                                    db_val = int(db_txt)
+                                else:
+                                    db_roll = _roll_for(
+                                        attacker["characterId"],
+                                        db_txt,
+                                        label=(
+                                            f"战斗 R{round_num}："
+                                            f"{attacker_name} 伤害加值 DB"
+                                        ),
+                                    )
+                                    db_val = db_roll["total"]
+                                raw_dmg = max_weapon + db_val
+                                damage_rolled = raw_dmg
+                                damage_after = max(0, raw_dmg - target["armor"])
+                                major_w = (
+                                    damage_after > 0
+                                    and damage_after * 2 >= target["hpMax"]
+                                )
+                                status_changed = self._apply_damage(
+                                    room, cs, target, damage_after, intent,
+                                    weapon_kind="attack",
+                                    roll_and_persist=_roll_for,
+                                )
+                                log_text = (
+                                    f"{attacker_name} 对 {target_name} "
+                                    f"造成 {damage_after} 点伤害 "
+                                    f"(极限成功，武器取最大 {max_weapon}, "
+                                    f"DB {db_val}, 总 {raw_dmg}, "
+                                    f"减甲 {target['armor']})"
+                                )
                             else:
-                                max_db = _max_damage(db_txt) if db_txt else 0
-                            raw_dmg = max_weapon + max_db + extra_roll
-                            is_impale = True
-                        elif is_extreme:
-                            # Non-impale extreme = max weapon + DB
-                            raw_dmg = _max_damage(weapon_expr) + db_val
+                                weapon_dmg_roll = _roll_for(
+                                    attacker["characterId"],
+                                    weapon_expr,
+                                    label=f"战斗 R{round_num}：{attacker_name} 武器伤害",
+                                )
+                                if db_txt in ("0", "-1", "-2"):
+                                    db_val = int(db_txt)
+                                elif db_txt and db_txt.lstrip('-').isdigit():
+                                    db_val = int(db_txt)
+                                else:
+                                    db_roll = _roll_for(
+                                        attacker["characterId"],
+                                        db_txt,
+                                        label=f"战斗 R{round_num}：{attacker_name} 伤害加值 DB",
+                                    )
+                                    db_val = db_roll["total"]
+                                raw_dmg = weapon_dmg_roll["total"] + db_val
+                                damage_rolled = raw_dmg
+                                damage_after = max(0, raw_dmg - target["armor"])
+                                major_w = damage_after > 0 and damage_after * 2 >= target["hpMax"]
+                                status_changed = self._apply_damage(
+                                    room, cs, target, damage_after, intent,
+                                    weapon_kind="attack",
+                                    roll_and_persist=_roll_for,
+                                )
+                                log_text = (
+                                    f"{attacker_name} 对 {target_name} "
+                                    f"造成 {damage_after} 点伤害 "
+                                    f"(出目 {attack_roll['total']}/{attack_skill})"
+                                )
+
+                            # ── Chat summary: damage dealt ───────────
+                            armor_line = (
+                                f"  护甲抵扣 {target['armor']}，实际伤害 {damage_after}"
+                                if target.get("armor") else ""
+                            )
+                            summary_parts = [
+                                f"⚔️ {attacker_name} → {target_name}："
+                                f"{log_text}",
+                            ]
+                            if armor_line:
+                                summary_parts.append(armor_line)
+                            summary_parts.append(
+                                f"  HP {hp_before} → {target['hp']}/{target['hpMax']}"
+                            )
+                            if status_changed is not None:
+                                summary_parts.append(
+                                    f"  状态：{status_changed.get('from')} → {status_changed.get('to')}"
+                                )
+                            if major_w:
+                                summary_parts.append("  ⚠️ 重伤")
+                            if is_impale:
+                                summary_parts.append("  🗡️ 贯穿")
+                            self._add_system_message(room, "\n".join(summary_parts))
+                        elif is_hit and intent["actionType"] == "melee_maneuver":
+                            pass
+
+                        if defense_type == "fight_back" and counter_dmg_rolled is not None:
+                            self._add_combat_log(
+                                cs, intent, attacker, target,
+                                attack_roll, log_defense_roll, log_defense_type,
+                                damage_rolled=counter_dmg_rolled,
+                                armor_used=attacker["armor"],
+                                damage_after_armor=counter_dmg_after,
+                                impale=False,
+                                major_wound=(
+                                    counter_dmg_after is not None
+                                    and counter_dmg_after > 0
+                                    and counter_dmg_after * 2 >= attacker["hpMax"]
+                                ),
+                                status_changed=status_changed,
+                                text=log_text or "无变化",
+                                new_logs=new_logs,
+                            )
                         else:
-                            base_roll = roll_dice(weapon_expr)
-                            raw_dmg = base_roll["total"] + db_val
-                        damage_rolled = raw_dmg
-                        damage_after = max(0, raw_dmg - target["armor"])
-                        major_w = damage_after > 0 and damage_after * 2 >= target["hpMax"]
-                        status_changed = self._apply_damage(
-                            room, cs, target, damage_after, intent,
-                            weapon_kind="attack",
-                        )
-                        log_text = (
-                            f"{attacker['displayName']} 对 {target['displayName']} "
-                            f"造成 {damage_after} 点伤害 "
-                            f"(出目 {attack_roll['total']}/{attack_skill}"
-                            f"{'; 贯穿!' if is_impale else ''})"
-                        )
-                    elif is_hit and intent["actionType"] == "melee_maneuver":
-                        pass
+                            self._add_combat_log(
+                                cs, intent, attacker, target,
+                                attack_roll, log_defense_roll, log_defense_type,
+                                damage_rolled=damage_rolled,
+                                armor_used=target["armor"],
+                                damage_after_armor=damage_after,
+                                impale=is_impale,
+                                major_wound=major_w,
+                                status_changed=status_changed,
+                                text=log_text or "无变化",
+                                new_logs=new_logs,
+                            )
 
-                    self._add_combat_log(
-                        cs, intent, attacker, target,
-                        attack_roll, log_defense_roll, defense_type,
-                        damage_rolled=damage_rolled,
-                        armor_used=target["armor"],
-                        damage_after_armor=damage_after,
-                        impale=is_impale,
-                        major_wound=major_w,
-                        status_changed=status_changed,
-                        text=log_text or "无变化",
-                        new_logs=new_logs,
+                    intent["resolved"] = True
+                    attacker["hasActedThisRound"] = True
+
+                # ── Flush rolls and commit ──────────────────────────
+                # Use `commit_immediately=False` so `add_dice_roll`
+                # only mutates `room["rolls"]` / `room["messages"]`
+                # in memory. `combatState.logs` is also mutated in
+                # memory. A single `_save()` below commits the whole
+                # batch atomically.
+                for character_id, roll in pending_rolls:
+                    self.add_dice_roll(
+                        room_id,
+                        roller_id=editor_id,
+                        roll=roll,
+                        as_character_id=character_id,
+                        commit_immediately=False,
                     )
-
-                intent["resolved"] = True
-                attacker["hasActedThisRound"] = True
-
-            cs["logs"] = new_logs + (cs.get("logs") or [])
-            # Phase stays "resolution" — KP uses next_combat_round to
-            # return to declaration phase for the next round.
-            self._save()
-            return deepcopy(cs)
+                cs["logs"] = new_logs + (cs.get("logs") or [])
+                self._save()
+                return _deepcopy(cs)
+            except Exception:
+                # Rollback: overwrite mutated room with the pristine
+                # snapshot captured at the top. The caller (typically
+                # router_combat.py) will translate ValueError → HTTP
+                # 400; other exceptions surface as 500 — either way
+                # the in-memory state stays consistent with the DB
+                # and no partial batch is visible to the client.
+                room.clear()
+                room.update(snapshot)
+                raise
 
     def next_combat_round(self, room_id: str, editor_id: str) -> dict:
+        from copy import deepcopy as _deepcopy
         from app.modules.dice.roller import roll_dice
 
         with self._lock:
             room = self._require_room(room_id)
-            cs = room.get("combatState")
-            if not cs or not cs.get("active"):
-                raise ValueError("没有进行中的战斗")
-            self._require_keeper(room, editor_id, "advance combat round")
 
-            # --- "下一轮结束" 的标准流程：先清声明 / 防御，再递增轮次 ---
-            cs["phase"] = "declaration"
-            cs["intents"] = []
-            cs["defenses"] = []
-            cs["currentIntentIndex"] = 0
-            for p in cs.get("participants", []):
-                p["hasActedThisRound"] = False
-            cs["roundNumber"] = int(cs.get("roundNumber", 0)) + 1
-            current_round = cs["roundNumber"]
+            # ── Snapshot for atomicity ────────────────────────────
+            # If anything raises while building the new round state
+            # (e.g. a die-roll helper or a persistence write), we
+            # overwrite `room` with the snapshot so no partial round
+            # state leaks out.
+            snapshot = _deepcopy(room)
 
-            # 濒死角色的首次 CON 检查发生在"完成 N+1 轮后进入
-            # N+2 轮时"（即倒下后至少完整度过一轮）。这里的
-            # current_round 是刚刚递增之后的新轮次编号，所以我们
-            #要求 dyingSinceRound < current_round - 1，也就是
-            # dyingSinceRound <= current_round - 2。
-            round_msgs: list[str] = []
-            chars_by_id = {c["id"]: c for c in room.get("characters", [])}
-            for p in cs.get("participants", []):
-                if p["status"] != "dying":
-                    continue
-                dying_since = int(p.get("dyingSinceRound") or 0)
-                # 跳过 dying 后还未满一轮的成员（即进入 N+1 轮时不检查）。
-                if dying_since >= current_round - 1:
-                    continue
-                target_char = self._find_character(room, p["characterId"])
-                con = _get_attribute(target_char, "CON")
-                con_roll = roll_dice("1d100", target_value=con)
-                if con_roll["total"] > con:
-                    p["status"] = "dead"
-                    p.pop("dyingSinceRound", None)
-                    round_msgs.append(f"{p['displayName']} 濒死 CON 失败，死亡。")
-                else:
-                    round_msgs.append(f"{p['displayName']} 濒死 CON 通过，仍存一息。")
+            try:
+                cs = room.get("combatState")
+                if not cs or not cs.get("active"):
+                    raise ValueError("没有进行中的战斗")
+                self._require_keeper(room, editor_id, "advance combat round")
 
-                # 同步 participant → 角色卡，确保下次进入战斗 / 重建 participants
-                # 时仍能看到最新状态，不会因重初始化而把 dying 状态丢掉。
-                c = chars_by_id.get(p["characterId"])
-                if c is not None:
-                    c_status = c.setdefault("status", {})
-                    c_status["hp"] = p["hp"]
-                    c_status["combatStatus"] = p["status"]
-                    if p.get("majorWound"):
-                        c_status["majorWound"] = True
+                # --- "下一轮结束" 的标准流程：先清声明 / 防御，再递增轮次 ---
+                cs["phase"] = "declaration"
+                cs["intents"] = []
+                cs["defenses"] = []
+                cs["currentIntentIndex"] = 0
+                for p in cs.get("participants", []):
+                    p["hasActedThisRound"] = False
+                cs["roundNumber"] = int(cs.get("roundNumber", 0)) + 1
+                current_round = cs["roundNumber"]
+
+                # ── in-memory roll accumulator ─────────────────────
+                pending_rolls: list[tuple[str, dict]] = []
+
+                def _roll_for(character_id: str, expression: str, label: str,
+                              target_value: int | None = None,
+                              bonus_penalty: int = 0) -> dict:
+                    roll = roll_dice(
+                        expression,
+                        target_value=target_value,
+                        bonus_penalty=bonus_penalty,
+                        label=label,
+                    )
+                    pending_rolls.append((character_id, roll))
+                    return roll
+
+                # 濒死角色的首次 CON 检查发生在"完成 N+1 轮后进入
+                # N+2 轮时"（即倒下后至少完整度过一轮）。这里的
+                # current_round 是刚刚递增之后的新轮次编号，所以我们
+                # 要求 dyingSinceRound < current_round - 1，也就是
+                # dyingSinceRound <= current_round - 2。
+                round_msgs: list[str] = []
+                chars_by_id = {c["id"]: c for c in room.get("characters", [])}
+                for p in cs.get("participants", []):
+                    if p["status"] != "dying":
+                        continue
+                    dying_since = int(p.get("dyingSinceRound") or 0)
+                    # 跳过 dying 后还未满一轮的成员（即进入 N+1 轮时不检查）。
+                    if dying_since >= current_round - 1:
+                        continue
+                    target_char = self._find_character(room, p["characterId"])
+                    con = _get_attribute(target_char, "CON")
+                    con_roll = _roll_for(
+                        p["characterId"],
+                        "1d100",
+                        f"战斗 R{current_round}：{p['displayName']} 濒死 CON 检定",
+                        con,
+                    )
+                    if con_roll["total"] > con:
+                        p["status"] = "dead"
+                        p.pop("dyingSinceRound", None)
+                        round_msgs.append(
+                            f"{p['displayName']} 濒死 CON 失败（{con_roll['total']}/{con}），死亡。"
+                        )
                     else:
-                        c_status.pop("majorWound", None)
-                    if p.get("dyingSinceRound") is not None:
-                        c_status["dyingSinceRound"] = p["dyingSinceRound"]
-                    else:
-                        c_status.pop("dyingSinceRound", None)
+                        round_msgs.append(
+                            f"{p['displayName']} 濒死 CON 通过（{con_roll['total']}/{con}），仍存一息。"
+                        )
 
-            self._add_system_message(
-                room,
-                f"⚔️ Round {cs['roundNumber']} - 宣告阶段。"
-                + (f" {' '.join(round_msgs)}" if round_msgs else "")
-            )
-            self._save()
-            return deepcopy(cs)
+                    # 同步 participant → 角色卡，确保下次进入战斗 / 重建 participants
+                    # 时仍能看到最新状态，不会因重初始化而把 dying 状态丢掉。
+                    c = chars_by_id.get(p["characterId"])
+                    if c is not None:
+                        c_status = c.setdefault("status", {})
+                        c_status["hp"] = p["hp"]
+                        c_status["combatStatus"] = p["status"]
+                        if p.get("majorWound"):
+                            c_status["majorWound"] = True
+                        else:
+                            c_status.pop("majorWound", None)
+                        if p.get("dyingSinceRound") is not None:
+                            c_status["dyingSinceRound"] = p["dyingSinceRound"]
+                        else:
+                            c_status.pop("dyingSinceRound", None)
+
+                # Atomic flush: append dice to in-memory lists only,
+                # then commit with a single `_save()`.
+                for character_id, roll in pending_rolls:
+                    self.add_dice_roll(
+                        room_id,
+                        roller_id=editor_id,
+                        roll=roll,
+                        as_character_id=character_id,
+                        commit_immediately=False,
+                    )
+                self._add_system_message(
+                    room,
+                    f"⚔️ Round {cs['roundNumber']} - 宣告阶段。"
+                    + (f" {' '.join(round_msgs)}" if round_msgs else "")
+                )
+                self._save()
+                return _deepcopy(cs)
+            except Exception:
+                room.clear()
+                room.update(snapshot)
+                raise
 
     def end_combat(self, room_id: str, editor_id: str) -> dict:
         with self._lock:
@@ -870,25 +1150,20 @@ class CombatMixin:
         intent: dict | None = None,
         *,
         weapon_kind: str = "attack",
+        roll_and_persist: "callable[[str, str, str, int | None], dict] | None" = None,
     ) -> dict | None:
         """Apply `damage` HP loss to `target` and transition status.
 
         Returns status change dict if a transition happened, else None.
 
-        HP = 0 always knocks the character unconscious unless they are
-        already dying (in which case the additional damage kills them) or
-        are already dead.
-
-        A single hit dealing damage >= hpMax kills the character outright.
-
-        A hit causing a major wound (>= hpMax/2) and leaving HP > 0 rolls
-        a CON check: failing moves to unconscious; passing stays in the
-        active → major_wound status path.
+        If `roll_and_persist(character_id, expression, label, target_value)`
+        is provided, any CON check produced by this call is persisted to
+        chat via that callback — otherwise dice are rolled locally and
+        only the system message is written.
         """
         if damage <= 0:
             return None
         prev_status = target["status"]
-        prev_hp = target["hp"]
         target["hp"] = max(0, target["hp"] - damage)
         hp_max = target["hpMax"]
         hp_after = target["hp"]
@@ -901,9 +1176,20 @@ class CombatMixin:
         # is instantly lethal (massive damage).
         is_instant_death = damage >= hp_max
 
-        from app.modules.dice.roller import roll_dice
         target_char = self._find_character(room, target["characterId"])
         con = _get_attribute(target_char, "CON")
+
+        def _persisted_con() -> dict:
+            if roll_and_persist is not None:
+                return roll_and_persist(
+                    target["characterId"],
+                    "1d100",
+                    f"战斗 R{cs.get('roundNumber', '?')}："
+                    f"{target['displayName']} 重伤 CON 检定",
+                    con,
+                )
+            from app.modules.dice.roller import roll_dice
+            return roll_dice("1d100", target_value=con)
 
         can_act = prev_status not in ("unconscious", "dying", "dead")
 
@@ -947,8 +1233,9 @@ class CombatMixin:
         elif is_major and can_act:
             # Major wound while HP still > 0 and the character can still act →
             # CON check (fails → unconscious; passes → still active but
-            # marked major-wound).
-            con_roll = roll_dice("1d100", target_value=con)
+            # marked major-wound). Dice are persisted via the callback when
+            # provided, so the roll appears in the room chat.
+            con_roll = _persisted_con()
             if con_roll["total"] > con:
                 new_status = "unconscious"
                 target["majorWound"] = True
@@ -981,10 +1268,7 @@ class CombatMixin:
             elif "dyingSinceRound" in target and new_status in ("dead", "active"):
                 target.pop("dyingSinceRound", None)
         # Mirror participant hp / status / dyingSinceRound onto the backing
-        # character card so they survive round transitions.
-        target_char = self._find_character(
-            room, target["characterId"]
-        ) if cs else None
+        # character card so they survive round transitions / refreshes.
         if target_char is not None:
             c_status = target_char.setdefault("status", {})
             c_status["hp"] = target["hp"]
